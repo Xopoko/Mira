@@ -31,7 +31,9 @@ access.
 
 Wi-Fi is the default for new installs. It serves numeric gaze measurements on
 TCP port `39472` over the private local network. The connection has no
-authentication or encryption. Restrict it to a trusted network.
+authentication or encryption. Restrict it to a trusted network. If the
+listener fails to open, the phone retries for up to 30 seconds before it
+shows the reason.
 
 USB is an optional mode for an existing paired USB bridge on Windows. Set
 `MIRA_IPHONE_USB_BRIDGE` to the path of its trusted Python adapter exporting

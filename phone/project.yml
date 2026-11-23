@@ -20,8 +20,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: local.myeyetracking.phone
         INFOPLIST_FILE: Info.plist
         GENERATE_INFOPLIST_FILE: NO
-        CURRENT_PROJECT_VERSION: 7
-        MARKETING_VERSION: 0.3.3
+        CURRENT_PROJECT_VERSION: 8
+        MARKETING_VERSION: 0.3.4
   MyEyeTrackingPhoneTests:
     type: bundle.unit-test
     platform: iOS

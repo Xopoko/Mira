@@ -27,7 +27,9 @@ To repeat the gaze check, use **Profile → Refine setup · about a minute**.
 
 Keep Mira in the foreground. After about 20 seconds without a touch, Mira dims
 the display. Tap the dimmed screen to restore brightness. Locking the phone,
-putting the app in the background or selecting **Stop** ends tracking.
+putting the app in the background or selecting **Stop** ends tracking. When
+you return, tap **Start Tracking**. If the Wi-Fi port is briefly unavailable,
+Mira retries for up to 30 seconds before it shows the reason.
 
 Wi-Fi sends numeric eye and head measurements, tracking status and frame
 timing. This TCP connection has no authentication or encryption. Use it only

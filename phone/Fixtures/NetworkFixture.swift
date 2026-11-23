@@ -8,6 +8,7 @@ struct NetworkFixture {
         do {
             try verifyPolicy()
             try verifyServer()
+            try verifyRetry()
             print("Phone Wi-Fi loopback fixture passed.")
         } catch {
             let reason = (error as? FixtureError)?.reason ?? "fixture_assertion"
@@ -34,7 +35,7 @@ struct NetworkFixture {
         let state = FixtureState()
         let server = WiFiNumericServer()
         server.onConnection = { state.setConnected($0) }
-        server.onError = { state.setFailed() }
+        server.onError = { _ in state.setFailed() }
         server.startLoopback { state.setPort($0) }
         defer { server.stop() }
 
@@ -91,6 +92,74 @@ struct NetworkFixture {
         }
         Darwin.close(activeAtStop)
         guard !state.failed else { throw FixtureError.failed("listener_error") }
+
+        // The connection closed by stop() still holds the port, as after backgrounding.
+        server.startLoopback(port: port) { state.setPort($0) }
+        guard waitUntil(timeout: 2, condition: { state.starts == 2 || state.failed }),
+              !state.failed, state.port == port else {
+            throw FixtureError.failed("listener_restart")
+        }
+        let afterRestart = try connect(port: port)
+        defer { Darwin.close(afterRestart) }
+        sendAll(afterRestart, Data("GET\n".utf8))
+        guard try readJSONLine(afterRestart)["version"] as? Int == 1 else {
+            throw FixtureError.failed("restart_get")
+        }
+    }
+
+    // A busy port is retried quietly; only a port that stays busy is reported, with its reason.
+    static func verifyRetry() throws {
+        let blocker = try occupyPort()
+        let state = FixtureState()
+        let server = WiFiNumericServer()
+        server.retryDelay = 0.1
+        server.onError = { _ in state.setFailed() }
+        server.startLoopback(port: blocker.port) { state.setPort($0) }
+        defer { server.stop() }
+        Thread.sleep(forTimeInterval: 0.35)
+        let (openedWhileBusy, reportedWhileBusy) = (state.starts != 0, state.failed)
+        Darwin.close(blocker.fd)
+        guard !openedWhileBusy else { throw FixtureError.failed("busy_port_opened") }
+        guard !reportedWhileBusy else { throw FixtureError.failed("busy_port_reported_early") }
+        guard waitUntil(timeout: 3, condition: { state.starts == 1 || state.failed }), !state.failed else {
+            throw FixtureError.failed("busy_port_retry")
+        }
+        let client = try connect(port: blocker.port)
+        defer { Darwin.close(client) }
+        sendAll(client, Data("GET\n".utf8))
+        guard try readJSONLine(client)["version"] as? Int == 1 else { throw FixtureError.failed("retry_get") }
+
+        let busy = try occupyPort()
+        defer { Darwin.close(busy.fd) }
+        let reason = FixtureState()
+        let failing = WiFiNumericServer()
+        failing.retryDelay = 0.05
+        failing.retryLimit = 2
+        failing.onError = { reason.setReason($0) }
+        failing.startLoopback(port: busy.port) { _ in reason.setPort(busy.port) }
+        defer { failing.stop() }
+        guard waitUntil(timeout: 2, condition: { reason.reason != nil }), reason.starts == 0,
+              reason.reason == String(cString: strerror(EADDRINUSE)) else {
+            throw FixtureError.failed("retry_limit_reason")
+        }
+    }
+
+    static func occupyPort() throws -> (fd: Int32, port: UInt16) {
+        let fd = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { throw FixtureError.failed("socket_create") }
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let bound = withUnsafeMutablePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { pointer -> Bool in
+                Darwin.bind(fd, pointer, length) == 0 && Darwin.listen(fd, 1) == 0 &&
+                    getsockname(fd, pointer, &length) == 0
+            }
+        }
+        guard bound else { Darwin.close(fd); throw FixtureError.failed("socket_occupy") }
+        return (fd, UInt16(bigEndian: address.sin_port))
     }
 
     static func packet(seq: Int) -> [String: Any] {
@@ -173,12 +242,17 @@ final class FixtureState {
     private var isConnected = false
     private var didFail = false
     private var listeningPort: UInt16?
+    private var listenCount = 0
+    private var failureReason: String?
     var connected: Bool { lock.lock(); defer { lock.unlock() }; return isConnected }
+    var reason: String? { lock.lock(); defer { lock.unlock() }; return failureReason }
+    func setReason(_ value: String) { lock.lock(); failureReason = value; lock.unlock() }
     var failed: Bool { lock.lock(); defer { lock.unlock() }; return didFail }
     var port: UInt16? { lock.lock(); defer { lock.unlock() }; return listeningPort }
+    var starts: Int { lock.lock(); defer { lock.unlock() }; return listenCount }
     func setConnected(_ value: Bool) { lock.lock(); isConnected = value; lock.unlock() }
     func setFailed() { lock.lock(); didFail = true; lock.unlock() }
-    func setPort(_ value: UInt16) { lock.lock(); listeningPort = value; lock.unlock() }
+    func setPort(_ value: UInt16) { lock.lock(); listeningPort = value; listenCount += 1; lock.unlock() }
 }
 
 enum FixtureError: Error {

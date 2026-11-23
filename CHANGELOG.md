@@ -7,6 +7,9 @@
 - Remove USB confirmation buttons. The iPhone USB connection remains available.
 - Redesign Practice around the live gaze contours.
 - Add a Windows overlay demo and an illustration of the TrueDepth setup.
+- Keep the iPhone Wi-Fi port usable after the app returns from the background.
+  A port that fails to open is retried for up to 30 seconds. The iPhone
+  companion is at 0.3.4.
 
 ## 1.3.1
 

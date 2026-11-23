@@ -117,8 +117,14 @@ final class EyeTracker: NSObject, ObservableObject, ARSessionDelegate {
                 self.connectionText = connected ? "Connected over USB" : "Waiting for the USB bridge…"
             }
         }
+        // A failure that arrives after tracking stopped, for example while the app
+        // leaves the foreground, must not leave a stale error on the screen.
         server.onError = { [weak self] in
-            DispatchQueue.main.async { self?.stop(); self?.fail("Couldn’t open the USB bridge") }
+            DispatchQueue.main.async {
+                guard let self = self, self.running, self.activeTransport == .usb else { return }
+                self.stop()
+                self.fail("Couldn’t open the USB bridge")
+            }
         }
         wifiServer.onEndpoint = { [weak self] endpoint in
             DispatchQueue.main.async { self?.wifiEndpoint = endpoint ?? "" }
@@ -130,8 +136,12 @@ final class EyeTracker: NSObject, ObservableObject, ARSessionDelegate {
                 self.connectionText = connected ? "Connected over Wi-Fi" : "Waiting over Wi-Fi…"
             }
         }
-        wifiServer.onError = { [weak self] in
-            DispatchQueue.main.async { self?.stop(); self?.fail("Couldn’t open Wi-Fi port 39472") }
+        wifiServer.onError = { [weak self] reason in
+            DispatchQueue.main.async {
+                guard let self = self, self.running, self.activeTransport == .wifi else { return }
+                self.stop()
+                self.fail("Couldn’t open Wi-Fi port 39472 (\(reason)). Tap Start Tracking to try again.")
+            }
         }
         refreshWiFiEndpoint()
     }
@@ -146,7 +156,19 @@ final class EyeTracker: NSObject, ObservableObject, ARSessionDelegate {
     }
 
     func leaveForeground() {
+        // Network teardown finishes asynchronously; keep running for a moment so the
+        // listeners and connections close before iOS suspends the app.
+        var task = UIBackgroundTaskIdentifier.invalid
+        task = UIApplication.shared.beginBackgroundTask(withName: "Close connections") {
+            UIApplication.shared.endBackgroundTask(task)
+            task = .invalid
+        }
         stop()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            guard task != .invalid else { return }
+            UIApplication.shared.endBackgroundTask(task)
+            task = .invalid
+        }
         if let previous = priorIdleTimerDisabled {
             UIApplication.shared.isIdleTimerDisabled = previous
             priorIdleTimerDisabled = nil
