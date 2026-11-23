@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "context-operator"
+version = "1.3.1"
+description = "Mira lets you select Windows controls with your eyes and confirm actions by voice or button."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+classifiers = ["Operating System :: Microsoft :: Windows"]
+dependencies = [
+    "PySide6>=6.8",
+    "numpy>=1.26",
+    "scikit-learn>=1.7",
+    "threadpoolctl>=3",
+    "uiautomation>=2",
+    "comtypes>=1.4",
+    "mss>=10",
+    "Pillow>=11",
+    "sherpa-onnx>=1.12",
+    "sounddevice>=0.5",
+]
+
+[project.scripts]
+context-operator = "context_operator.app:main"
+
+[tool.setuptools.packages.find]
+include = ["context_operator*"]
+
+[tool.setuptools.package-data]
+context_operator = ["assets/*.json", "assets/*.npz", "assets/*.svg", "assets/*.ico"]
+"context_operator.foundations.perception" = ["perception-models.json"]
+"context_operator.foundations.ranking" = ["model.json"]

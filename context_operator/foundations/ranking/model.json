@@ -1,0 +1,16 @@
+{
+  "model": "Qwen/Qwen3-Reranker-0.6B",
+  "revision": "e61197ed45024b0ed8a2d74b80b4d909f1255473",
+  "license": "Apache-2.0",
+  "source": "https://huggingface.co/Qwen/Qwen3-Reranker-0.6B/tree/e61197ed45024b0ed8a2d74b80b4d909f1255473",
+  "scoreType": "relevance_logit_difference",
+  "artifacts": [
+    {"path":"config.json","size":727,"algorithm":"git-blob-sha1","digest":"39784456e9de7a06590f8a4a38760ac1fb38d65e"},
+    {"path":"generation_config.json","size":214,"algorithm":"git-blob-sha1","digest":"e4f1d3193e99a3e5d7047edf56e93a6e933fa31b"},
+    {"path":"model.safetensors","size":1191588280,"algorithm":"sha256","digest":"27cd75a405b9c1b46b59abfd88aaa209e6fed2a1972cde9b70e7659537c5e65b"},
+    {"path":"tokenizer.json","size":11422654,"algorithm":"sha256","digest":"aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"},
+    {"path":"tokenizer_config.json","size":9706,"algorithm":"git-blob-sha1","digest":"7345216a0785dc7086e8c245b2a9d3896ce2b756"},
+    {"path":"merges.txt","size":1671853,"algorithm":"git-blob-sha1","digest":"31349551d90c7606f325fe0f11bbb8bd5fa0d7c7"},
+    {"path":"vocab.json","size":2776833,"algorithm":"git-blob-sha1","digest":"4783fe10ac3adce15ac8f358ef5462739852c569"}
+  ]
+}

@@ -1,0 +1,48 @@
+# Local settings, calibration, models and captures
+/.local/
+/.env
+/.env.*
+!/.env.example
+*.log
+*.tmp
+*.bak
+*.swp
+/captures/
+/artifacts/
+/models/
+
+# Private design and validation notes
+/.impeccable/
+/DESIGN.md
+/PRODUCT.md
+/VALIDATION.md
+/docs/foundations.json
+/docs/research-v1.md
+/phone/origin.json
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+/dist/
+/build/
+/.coverage
+/htmlcov/
+
+# Xcode and signing
+.DS_Store
+xcuserdata/
+*.xcuserstate
+*.xcarchive/
+*.ipa
+*.mobileprovision
+*.p12
+*.pfx
+*.key
+*.pem
+/phone/*.xcodeproj/
+/phone/.build/
+/phone/DerivedData/

@@ -1,0 +1,25 @@
+name: Bug report
+description: Report behavior you can reproduce in Mira.
+body:
+  - type: markdown
+    attributes:
+      value: Use the private security form for vulnerabilities. Review any logs and images for personal data before attaching them.
+  - type: input
+    id: environment
+    attributes:
+      label: Mira version and device
+      description: Include your Windows and Python versions, and the iPhone model, iOS version and connection type when relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and observed behavior
+    validations:
+      required: true

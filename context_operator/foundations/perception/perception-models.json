@@ -1,0 +1,89 @@
+{
+  "schema": "jev.perception.models.v1",
+  "detector": {
+    "repository": "microsoft/OmniParser-v2.0",
+    "revision": "6600256cb0f1b07651e3bc86166196307bad7e2d",
+    "license": "AGPL-3.0 (icon_detect/LICENSE)"
+  },
+  "ocr": {
+    "repository": "PaddlePaddle/PaddleOCR",
+    "version": "3.3.2",
+    "runtime": "PaddlePaddle 3.2.2 / PaddleX 3.3.13",
+    "license": "Apache-2.0",
+    "languages": [
+      "Cyrillic",
+      "English"
+    ],
+    "models": [
+      "PP-OCRv5_mobile_det",
+      "cyrillic_PP-OCRv5_mobile_rec"
+    ],
+    "dictionary": "cyrillic_PP-OCRv5_mobile_rec_infer/inference.yml",
+    "upstreamDocumentation": "https://github.com/PaddlePaddle/PaddleOCR/blob/v3.3.2/docs/version3.x/algorithm/PP-OCRv5/PP-OCRv5_multi_languages.md"
+  },
+  "assets": [
+    {
+      "name": "omniparser-v2.pt",
+      "url": "https://huggingface.co/microsoft/OmniParser-v2.0/resolve/6600256cb0f1b07651e3bc86166196307bad7e2d/icon_detect/model.pt",
+      "sha256": "dab3d4351ad00b035db829909a4db98354d5a90f6990e4ac00222a9a95d4bf57",
+      "size": 40623819
+    },
+    {
+      "name": "OmniParser-detector-LICENSE",
+      "url": "https://huggingface.co/microsoft/OmniParser-v2.0/resolve/6600256cb0f1b07651e3bc86166196307bad7e2d/icon_detect/LICENSE",
+      "sha256": "4df3c306dddaaf4baffdff5ca820cc679ac8cd6dc263c6a74517783e42fa7a3b",
+      "size": 34522
+    },
+    {
+      "name": "PP-OCRv5_mobile_det_infer.tar",
+      "url": "https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-OCRv5_mobile_det_infer.tar",
+      "sha256": "50446e5d01ac2a73d5319c89513281f6578414c888c602f9af13f93feefffc58",
+      "size": 4935680,
+      "directory": "PP-OCRv5_mobile_det_infer",
+      "files": {
+        "inference.yml": "98069072e1b6b37d727fd9d9f11725faa46d6ea0de012f2ed26caea011c37699",
+        "inference.pdiparams": "afa1820cb16c1fd0dad589d0f8b389139061c1ef6d68019685fd07be997dda5b",
+        "inference.json": "05feef1acb00aa4cd7362b15f7f501fc4f99d7b1fa73c1c871e0c7b1504b0f5c"
+      }
+    },
+    {
+      "name": "cyrillic_PP-OCRv5_mobile_rec_infer.tar",
+      "url": "https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/cyrillic_PP-OCRv5_mobile_rec_infer.tar",
+      "sha256": "ef0c66f19ebe6849daf9aa7485e9253d2a8d851e165e208bf08ba68a620ae645",
+      "size": 8202240,
+      "directory": "cyrillic_PP-OCRv5_mobile_rec_infer",
+      "files": {
+        "inference.pdiparams": "434dc9fa2a99fa3653e08f8cf793ae56be7dd41c35c4980e6255147cc02bbc80",
+        "inference.json": "5d90f1bfca52d80c01de176c5238fae2459995a99ff1dbfe5319ab4ed1735df2",
+        "inference.yml": "5c76cc91fa98410178a09f498db10050d0ec1634a660053d3005ab7be581f501"
+      }
+    }
+  ],
+  "derived": {
+    "detector": {
+      "name": "omniparser-v2.onnx",
+      "sha256": "8c39822091f89a5ff74e7829e2b5f4ca6034a06322739bab2b784a9b00a48a08",
+      "size": 80376737,
+      "conversion": "Ultralytics 8.3.70 / Torch2.5.1 CPU / ONNX1.17 / FP32 opset17, fixed640, no simplification",
+      "metadata": {
+        "source": "microsoft/OmniParser-v2.0",
+        "revision": "6600256cb0f1b07651e3bc86166196307bad7e2d",
+        "input_size": "640",
+        "precision": "float32",
+        "nms": "external"
+      }
+    },
+    "recognition": {
+      "name": "cyrillic_PP-OCRv5_mobile_rec.onnx",
+      "sha256": "16b90ab84b9f0a164edb0aa529cf23c57b3bd4c949f7d70196ecaf9b4da02db9",
+      "size": 8065588,
+      "conversion": "Paddle2ONNX2.1.0 / Paddle3.1.1 / ONNX1.17 / FP32 opset17, dynamic original-resolution text crops",
+      "metadata": {
+        "source": "PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec",
+        "precision": "float32",
+        "preprocessing": "PaddleX 3.3.13 OCRReisizeNormImg/ToBatch",
+        "decoding": "PaddleX 3.3.13 CTCLabelDecode"
+      }
+    }
+  }
+}
