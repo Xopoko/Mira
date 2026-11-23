@@ -9,6 +9,7 @@
 - Add a Windows overlay demo and an illustration of the TrueDepth setup.
 - Replace the app icon. `scripts/render_readme_media.py` regenerates the README
   screenshots and the overlay demo.
+- Give the iPhone companion the same icon. The iPhone companion is at 0.3.5.
 - Keep the iPhone Wi-Fi port usable after the app returns from the background.
   A port that fails to open is retried for up to 30 seconds. The iPhone
   companion is at 0.3.4.
