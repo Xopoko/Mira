@@ -106,7 +106,7 @@ class WebcamSetupWindow(QMainWindow):
         self.applied = False
         self.error = ''
         self.setWindowTitle('Mira · Set up webcam')
-        self.setWindowIcon(QIcon(str(ASSETS / 'icon.svg')))
+        self.setWindowIcon(QIcon(str(ASSETS / 'icon.png')))
         self.setStyleSheet(theme())
         self.setWindowFlag(Qt.Window, True)
         self.resize(1020, 690)

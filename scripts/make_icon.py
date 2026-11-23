@@ -1,13 +1,27 @@
+"""Build the application icons from a square source image.
+
+    python scripts/make_icon.py path/to/new-icon.webp   # replace the icon
+    python scripts/make_icon.py                         # rebuild icon.ico from icon.png
+"""
 from pathlib import Path
-from PySide6.QtWidgets import QApplication
-from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtGui import QImage,QPainter
-from PySide6.QtCore import Qt
+import sys
+
 from PIL import Image
-assets=Path(__file__).resolve().parents[1]/'context_operator'/'assets'
-app=QApplication([])
-image=QImage(256,256,QImage.Format_ARGB32);image.fill(Qt.transparent)
-renderer=QSvgRenderer(str(assets/'icon.svg'));p=QPainter(image);renderer.render(p);p.end()
-image.save(str(assets/'icon.png'))
-Image.open(assets/'icon.png').save(assets/'icon.ico',sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])
-print('Application icon created.')
+
+ASSETS = Path(__file__).resolve().parents[1] / 'context_operator' / 'assets'
+ICON = ASSETS / 'icon.png'
+ICO_SIZES = [(16, 16), (20, 20), (24, 24), (32, 32), (40, 40), (48, 48), (64, 64), (128, 128), (256, 256)]
+
+
+def main():
+    if len(sys.argv) > 1:
+        source = Image.open(sys.argv[1]).convert('RGBA')
+        if source.width != source.height:
+            raise SystemExit('The icon source must be square.')
+        source.resize((512, 512), Image.Resampling.LANCZOS).save(ICON, optimize=True)
+    Image.open(ICON).convert('RGBA').save(ASSETS / 'icon.ico', sizes=ICO_SIZES)
+    print('Application icon created.')
+
+
+if __name__ == '__main__':
+    main()

@@ -32,6 +32,17 @@ image, or test data for private content before attaching it. Keep pull requests
 focused and include a regression test when existing coverage misses a behavior
 change.
 
+## Regenerate README images
+
+```powershell
+.\.venv\Scripts\python.exe scripts\render_readme_media.py
+```
+
+The script renders Mira offscreen with simulated gaze and writes
+`mira-overview.png`, `mira-gaze.gif`, and `mira-social.png` to `docs/images/`.
+The 3D illustration (`mira-gaze-explainer.gif`) and the iOS Simulator screenshot
+(`mira-iphone.png`) are produced separately.
+
 ## Local data
 
 A source checkout uses `.local/`. A normal Python package installation uses

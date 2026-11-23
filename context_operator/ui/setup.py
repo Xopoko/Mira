@@ -95,7 +95,7 @@ class SetupWindow(QMainWindow):
             self.error = 'Couldn’t resume the saved setup: ' + str(exc)
         self.candidate = self.session.candidate
         self.setWindowTitle('Mira · Set up iPhone')
-        self.setWindowIcon(QIcon(str(ASSETS / 'icon.svg')))
+        self.setWindowIcon(QIcon(str(ASSETS / 'icon.png')))
         self.setStyleSheet(theme(DARK_SETUP_STYLE))
         self.setWindowFlag(Qt.FramelessWindowHint, True)
         self.canvas = SetupCanvas(self)

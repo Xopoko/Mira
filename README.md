@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="context_operator/assets/icon.svg" width="96" alt="Mira icon">
+  <img src="context_operator/assets/icon.png" width="96" alt="Mira icon">
 </p>
 
 <h1 align="center">Mira</h1>

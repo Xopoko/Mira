@@ -373,7 +373,7 @@ class Window(QMainWindow):
     def __init__(self,controller):
         super().__init__();self.c=controller;self.settings=controller.settings;self.overlays=[];self.setup_window=None
         self.setWindowTitle('Mira');self.resize(1220,900);self.setMinimumSize(960,680)
-        self.setWindowIcon(QIcon(str(ASSETS/'icon.svg')));self.setStyleSheet(theme())
+        self.setWindowIcon(QIcon(str(ASSETS/'icon.png')));self.setStyleSheet(theme())
         self.last_paint=0.;self.counter=0;self.practice_active=False;self._profile_stamp=None;self._profile_status={}
         self._phone_search = None
         self._guide_search = False

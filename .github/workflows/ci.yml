@@ -40,7 +40,7 @@ jobs:
         run: >-
           python -I -c "from importlib.resources import files;
           from context_operator.providers.fast_intent import FastIntent;
-          assert (files('context_operator') / 'assets' / 'icon.svg').is_file();
+          assert (files('context_operator') / 'assets' / 'icon.png').is_file();
           assert (files('context_operator.foundations.perception') / 'perception-models.json').is_file();
           assert (files('context_operator.foundations.ranking') / 'model.json').is_file();
           assert FastIntent().classify('click here')[0] == 'click'"
