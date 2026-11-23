@@ -17,14 +17,16 @@
   <a href="https://github.com/Xopoko/Mira/actions/workflows/ci.yml"><img src="https://github.com/Xopoko/Mira/actions/workflows/ci.yml/badge.svg" alt="Windows and iOS CI"></a>
 </p>
 
-![Mira’s Windows overlay lighting up different screen regions as the estimated gaze moves](docs/images/mira-gaze.gif)
-
-Mira’s Windows overlay following simulated gaze samples.
+![An iPhone projects infrared dots onto a face, its camera reads the reflection, and Mira highlights the estimated gaze region](docs/images/mira-gaze-explainer.gif)
 
 Mira is a gaze-tracking prototype. The iPhone uses ARKit to measure eye
 direction and head pose. After a personal calibration, the Windows app maps
 those measurements to screen coordinates and lights up nearby interface
 contours. The result is an estimate of which region has your attention.
+
+![Mira’s Windows overlay lighting up different screen regions as the estimated gaze moves](docs/images/mira-gaze.gif)
+
+Mira’s Windows overlay following simulated gaze samples.
 
 <table>
   <tr>
@@ -66,11 +68,9 @@ are optional.
 
 ## How it works
 
-![An iPhone projects infrared dots onto a face, its camera reads the reflection, and Mira highlights the estimated gaze region](docs/images/mira-gaze-explainer.gif)
-
 TrueDepth projects an infrared dot pattern onto the face. The infrared camera
-reads the reflected pattern to measure depth. The animation slows down both
-paths so you can see their direction. [Apple’s TrueDepth overview](https://support.apple.com/en-us/102381)
+reads the reflected pattern to measure depth. The illustration above slows
+down both paths so you can see their direction. [Apple’s TrueDepth overview](https://support.apple.com/en-us/102381)
 
 The seated figure and curved monitor are CC0.
 [Innerscene figure](https://www.innerscene.com/tools/library/3d-parts/seated-office-figure-79182d38) ·
