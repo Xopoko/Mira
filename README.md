@@ -72,7 +72,12 @@ TrueDepth projects an infrared dot pattern onto the face. The infrared camera
 reads the reflected pattern to measure depth. The animation slows down both
 paths so you can see their direction. [Apple’s TrueDepth overview](https://support.apple.com/en-us/102381)
 
-Character mesh by Blender Studio and contributors. [Human Base Meshes (CC0)](https://www.blender.org/download/demo-files/)
+The seated figure and curved monitor are CC0.
+[Innerscene figure](https://www.innerscene.com/tools/library/3d-parts/seated-office-figure-79182d38) ·
+[3D Assets monitor](https://3dassets.dev/assets/computers-and-desk-gadgets-monitor-34-curved-bc2883cf).
+The iPhone 15 Pro Max model by polyman Studio was adapted for the illustration.
+[Original model](https://sketchfab.com/3d-models/apple-iphone-15-pro-max-black-df17520841214c1792fb8a44c6783ee7) ·
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 - `phone/` reads eye and head measurements from ARKit and serves them over Wi-Fi.
 - `context_operator/personalization/` fits and checks the screen mapping.
