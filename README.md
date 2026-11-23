@@ -66,7 +66,13 @@ are optional.
 
 ## How it works
 
-![Illustration of an iPhone measuring a person’s eyes and head, and the Windows screen highlighting an estimated gaze region](docs/images/mira-gaze-explainer.gif)
+![An iPhone projects infrared dots onto a face, its camera reads the reflection, and Mira highlights the estimated gaze region](docs/images/mira-gaze-explainer.gif)
+
+TrueDepth projects an infrared dot pattern onto the face. The infrared camera
+reads the reflected pattern to measure depth. The animation slows down both
+paths so you can see their direction. [Apple’s TrueDepth overview](https://support.apple.com/en-us/102381)
+
+Character mesh by Blender Studio and contributors. [Human Base Meshes (CC0)](https://www.blender.org/download/demo-files/)
 
 - `phone/` reads eye and head measurements from ARKit and serves them over Wi-Fi.
 - `context_operator/personalization/` fits and checks the screen mapping.
