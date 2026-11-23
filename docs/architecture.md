@@ -9,11 +9,11 @@ personal gaze + search radius    local numerical receipt
              ↓
 conservative click residuals + optional personal regression update
              ↓
-operational point → scene fusion → concrete action target
-             ↓             ↓
- Qt gaze/radial light   voice / USB / optional dwell
-             ↓             ↓
-       target highlight → fresh-target validation → Windows output
+estimated screen point → nearby visible controls → Qt gaze contours
+                                          ↓
+                          optional voice, typing or dwell
+                                          ↓
+                           fresh-target validation → Windows output
 ```
 
 ## Source, coordinates and lifecycle
@@ -104,7 +104,7 @@ Native geometry caches store drawn shapes, not screen captures.
 
 `highlight_mode` selects the default radial presentation or opt-in magnetic focus.
 Magnetic selection remains inside `Fusion`: the displayed yellow element is the
-actual `Focus.target`, including for voice/USB activation. Its separate hysteresis
+actual `Focus.target`, including for voice commands. Its separate hysteresis
 retains a full element identity and the acquisition gaze point. A directional
 shift of 18–60 physical pixels (scaled from source radius) must persist across
 distinct gaze timestamps for 180 ms; a strong spatial advantage switches sooner.
@@ -158,20 +158,13 @@ cannot redirect a short command to the new focus.
 
 Before action, output checks the fresh element identity, process, geometry,
 ownership and visual digest where applicable. Semantic UIA runs on its own worker;
-an error after dispatch does not trigger a coordinate fallback or retry. USB-button
-presses use the target displayed at the native press timestamp and the pointer route
-chosen before dispatch. No gaze or inferred attention alone triggers an action unless
-the user explicitly enables dwell. Details: [usb-button.md](usb-button.md).
+an error after dispatch does not trigger a coordinate fallback or retry. Gaze alone
+activates a control only when the user enables dwell.
 SendInput reports how many events Windows accepted. A successful UIA call reports
 that the provider returned without an error. The application refreshes the scene
 after dispatch.
 
-USB activation observes keyboard Raw Input through one process-wide message-only
-window. Binding includes an opaque device identity, VK, scan code and extended
-flags; enrollment first excludes the user's ordinary keyboard. No keyboard hook
-or legacy-input suppression is installed. Old VK-only settings stay disabled.
-
 `Controller.register_source(name, source)` accepts adapters with `start(emit)`
-and `stop()` methods. The USB button emits an activation event. Programmatic
-sources can supply gaze, text commands or a stop event. The controller rejects
+and `stop()` methods. Programmatic sources can supply gaze, text commands or
+a stop event. The controller rejects
 events from earlier generations after a source stops or restarts.

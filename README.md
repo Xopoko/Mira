@@ -5,7 +5,7 @@
 <h1 align="center">Mira</h1>
 
 <p align="center">
-  <strong>Look at a Windows control and activate it by voice or with a button.</strong>
+  <strong>See roughly where you’re looking on a Windows screen with an iPhone’s TrueDepth camera.</strong>
 </p>
 
 <p align="center">
@@ -17,25 +17,72 @@
   <a href="https://github.com/Xopoko/Mira/actions/workflows/ci.yml"><img src="https://github.com/Xopoko/Mira/actions/workflows/ci.yml/badge.svg" alt="Windows and iOS CI"></a>
 </p>
 
-![Mira's Practice screen highlights Plus, then a typed command increases the counter](docs/images/mira-practice.gif)
+![Mira’s Windows overlay lighting up different screen regions as the estimated gaze moves](docs/images/mira-gaze.gif)
 
-The demo uses Mira's mouse preview and typed commands in an isolated Windows session.
+Mira’s Windows overlay following simulated gaze samples.
 
-Mira uses an iPhone's TrueDepth camera to estimate where you are looking and
-Windows UI Automation to find controls. A highlight shows which control will
-receive your next action. You can confirm with a spoken command, a bound USB
-button, or optional dwell.
+Mira is a gaze-tracking prototype. The iPhone uses ARKit to measure eye
+direction and head pose. After a personal calibration, the Windows app maps
+those measurements to screen coordinates and lights up nearby interface
+contours. The result is an estimate of which region has your attention.
 
-- Try the highlight and commands with a mouse and keyboard in **Practice**.
-- Set up gaze for your screen and check it on separate targets before saving it.
-- Use a calibrated webcam as a fallback when the iPhone briefly loses track.
-- Pause control from **Overview** or with **Ctrl+Alt+F12**.
+<table>
+  <tr>
+    <th>Windows</th>
+    <th>iPhone</th>
+  </tr>
+  <tr>
+    <td><img src="docs/images/mira-overview.png" width="560" alt="Mira for Windows showing the iPhone connection and gaze setup"></td>
+    <td><img src="docs/images/mira-iphone.png" width="175" alt="Mira for iPhone showing where to position the phone below the screen"></td>
+  </tr>
+</table>
+
+## Try gaze tracking
+
+1. [Install the companion](phone/README.md) on a TrueDepth iPhone running
+   iOS 17 or later. Place it below the screen facing you, then tap
+   **Start Tracking**.
+2. Put the iPhone and PC on the same trusted network. In the Windows app,
+   open **Overview** and select **Find iPhone**. See the
+   [Wi-Fi guide](docs/phone-wifi.md) for manual connection.
+3. Select **Set up**. Look at each of the nine training targets and five
+   check targets. Press **Space** when each ring fills, then select
+   **Use gaze setup** if offered.
+4. Select **Connect iPhone**, then **Open Practice**. In the default
+   **Follow gaze** mode, the dot and nearby contours move as you look around.
+   Choose **Return to desktop** to try the overlay in other apps.
+   **Ctrl+Alt+F12** pauses tracking.
+
+Mira is most useful for broad areas such as panels and large controls.
+In **Profile → Details**, the setup check shows **Typical error** (median)
+and **Hard points** (90th percentile) in physical screen pixels. The check uses targets that
+were held out of calibration. Repeat setup if you move the phone or monitor
+or change where you sit.
+
+You can preview the contours with **Practice → Test with mouse**. A
+[calibrated webcam](docs/webcam.md) can take over briefly when the iPhone
+loses track. [Local voice commands](docs/models.md) and dwell activation
+are optional.
+
+## How it works
+
+![Illustration of an iPhone measuring a person’s eyes and head, and the Windows screen highlighting an estimated gaze region](docs/images/mira-gaze-explainer.gif)
+
+- `phone/` reads eye and head measurements from ARKit and serves them over Wi-Fi.
+- `context_operator/personalization/` fits and checks the screen mapping.
+- `context_operator/core/` and `context_operator/ui/` combine projected gaze
+  with visible interface geometry and draw the overlay.
+
+See [Architecture](docs/architecture.md) for coordinates, calibration and
+how Mira handles stale observations.
 
 ## Install on Windows
 
-Use Windows x64 and 64-bit Python 3.11. Download the wheel and
-`requirements.lock.txt` from [Releases](https://github.com/Xopoko/Mira/releases).
-Run these commands in PowerShell from the download folder.
+Use Windows x64 and 64-bit Python 3.11. The Practice layout shown above is
+available when you [build from source](#build-from-source). To install the
+latest published release, download the wheel and `requirements.lock.txt`
+from [Releases](https://github.com/Xopoko/Mira/releases), then run these
+commands in PowerShell from the download folder.
 
 ```powershell
 py -3.11 -m venv .venv
@@ -43,28 +90,6 @@ py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --no-deps .\context_operator-1.3.1-py3-none-any.whl
 .\.venv\Scripts\pythonw.exe -m context_operator.app
 ```
-
-## Try it
-
-Open **Practice** and turn on **Test with mouse**. Move the pointer near
-**Plus** to see the target highlight. Enter `click Plus` in **Type a command**
-and press **Enter**. The counter increases.
-
-![Mira's Practice screen with the selected Plus control and counter](docs/images/mira-practice.png)
-
-For eye tracking, [install the companion](phone/README.md) on a TrueDepth
-iPhone running iOS 17 or later, then [connect it over Wi-Fi](docs/phone-wifi.md).
-In **Overview**, select **Set up**. Look at each of the nine training targets
-and five check targets, pressing **Space** when each ring fills. Select
-**Use gaze setup** when Mira offers it. Repeat setup if you move the phone or
-monitor or change your seated position.
-
-![Mira's Overview with gaze source, microphone, button and setup controls](docs/images/mira-overview.png)
-
-Set up [local voice recognition](docs/models.md) to say `click`, or
-[bind a USB button](docs/usb-button.md). You can also turn on dwell in
-**Settings** to activate a control by holding your gaze. See the
-[webcam guide](docs/webcam.md) for fallback setup.
 
 ## Build from source
 
@@ -80,25 +105,16 @@ Run `.\.venv\Scripts\python.exe -m pip wheel --no-deps --wheel-dir dist .` to
 build the desktop wheel. See [Development](docs/development.md) for desktop
 tests and [iPhone checks](phone/README.md#checks) for the Xcode build and tests.
 
-## How it fits together
-
-`context_operator/core/` combines gaze with information about visible
-controls and checks that a target is still current before dispatch.
-`context_operator/providers/` connects the core to Windows, cameras and local
-models. `context_operator/ui/` contains the Qt app and overlay.
-`phone/` contains the Swift companion.
-[Architecture](docs/architecture.md) explains setup, target selection and input.
-
 ## Privacy
 
-- Voice recognition runs locally. Screen and camera frames stay in memory
-  during ordinary use. Settings and numeric calibration data stay on the PC.
-- The iPhone Wi-Fi stream carries numeric eye and head measurements without
-  encryption or authentication. Use it on a trusted network.
-- If you choose **Remote API (HTTPS)**, complex commands and screen context
+- Over Wi-Fi, the iPhone sends numeric eye and head measurements. Use a
+  trusted network because this stream has no authentication or encryption.
+- Calibration data and settings stay on the PC. Voice recognition runs
+  locally. Screen and camera frames stay in memory during ordinary use.
+- If you enable **Remote API (HTTPS)**, complex commands and screen context
   go to the endpoint you configure. With screen recognition enabled, context
-  may include an image of the visible part of the current window. See
-  [Voice and models](docs/models.md) for what the request contains.
+  may include an image of the visible part of the current window.
+  See [Voice and models](docs/models.md).
 
 ## Contributing and license
 

@@ -14,9 +14,7 @@ DEFAULTS={'radius':230,'stability_ms':110,'microphone':'',
           'phone_transport':'wifi','phone_wifi_host':'',
           'first_run_done':False,'show_scene_map':False,
           'webcam_device_id':'','webcam_device_name':'',
-          'game_gaze_enabled':False,
-          'button_vk':0,'button_name':'','button_enabled':False,
-          'button_device_id':'','button_scan_code':0,'button_extended':0}
+          'game_gaze_enabled':False}
 
 def load():
     try:settings={**DEFAULTS,**json.loads((LOCAL/'settings.json').read_text(encoding='utf-8'))}
@@ -28,10 +26,9 @@ def load():
     settings.pop('hybrid_enabled',None);settings.pop('hybrid_use',None)
     settings.pop('spatial_screen',None)
     if settings.get('highlight_mode') not in ('radial','magnetic'):settings['highlight_mode']='radial'
-    # A legacy VK-only mapping must never reactivate a global keyboard binding.
-    device=settings.get('button_device_id')
-    if not (isinstance(device,str) and len(device)==64 and all(c in '0123456789abcdef' for c in device)):
-        settings['button_device_id']='';settings['button_enabled']=False
+    for key in ('button_vk','button_name','button_enabled','button_device_id',
+                'button_scan_code','button_extended'):
+        settings.pop(key,None)
     return settings
 
 def save(settings):

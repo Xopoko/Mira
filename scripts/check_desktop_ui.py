@@ -43,7 +43,17 @@ for i,name in enumerate(('overview','profile','practice','settings')):
                    'horizontal_overflow':area.horizontalScrollBar().maximum(),
                    'vertical_scroll':area.verticalScrollBar().maximum()}
 
-window.navigate(2);app.processEvents()
+window.navigate(2)
+window.resize(window.minimumSize())
+app.processEvents()
+practice = window.stack.currentWidget()
+assert practice.horizontalScrollBar().maximum() == 0
+assert practice.verticalScrollBar().maximum() == 0
+window.practice_buttons['Top left'].setFocus()
+QTest.keyClick(window.practice_buttons['Top left'], Qt.Key_Tab)
+assert window.practice_buttons['Plus'].hasFocus()
+window.resize(1220, 900)
+app.processEvents()
 window.editor.setFocus()
 QTest.keyClick(window.editor,Qt.Key_Tab)
 assert window.practice_command.hasFocus()
@@ -55,46 +65,38 @@ assert field.pixelColor(field.width()//2,0).name()=='#3d6bff'
 assert any(field.pixelColor(x,field.height()//2).name()=='#2c4fd1' for x in range(10,45))
 window.practice_command.clear()
 
-with patch.dict(c.settings,button_device_id='a'*64,button_enabled=True):
-    reader=SimpleNamespace(running=True,error='',stop=Mock())
-    c.input_sources['keyboard-button']=reader
-    with patch('context_operator.ui.window.time.monotonic',return_value=100.):
-        window.last_paint=0;window.refresh()
-        assert window.rail_sources['Button'][0].state=='standby'
-        assert window.focus_panel.maximumHeight()<180
-        c.running=True;c.microphone=True;c.voice_state='standby'
-        c.voice_status='Loading speech recognition'
-        c.active_sources['keyboard-button']=(c.generation,1)
-        window.last_paint=0;window.refresh()
-        assert window.rail_sources['Button'][0].state=='go'
-        assert window.rail_sources['Microphone'][0].state=='standby'
-        assert window.focus_panel.maximumHeight()>180
-        c._speech({'type':'ready'},c.voice_generation)
-        window.last_paint=0;window.refresh()
-        assert window.rail_sources['Microphone'][0].state=='go'
-        c._speech({'type':'ready','device':{'fallbackFrom':'USB microphone'}},c.voice_generation)
-        c._speech({'type':'speech_start','utteranceId':1},c.voice_generation)
-        window.last_paint=0;window.refresh()
-        fallback='Using the default microphone because USB microphone isn’t connected.'
-        assert fallback in window.voice_value.text() and fallback in window.microphone_note.text()
-        reader.error='Device reader stopped'
-        c._speech({'type':'error','message':'Recognition failed'},c.voice_generation)
-        c._speech({'type':'stopped'},c.voice_generation)
-        window.last_paint=0;window.refresh()
-        assert window.rail_sources['Button'][0].state=='hold'
-        assert window.rail_sources['Microphone'][0].state=='hold'
-        assert window.voice_value.text()=='Error · Recognition failed'
-        window.last_paint=0
-        c._output({'target':'Plus'},Intent('click'),'',c.generation,99.9)
-        assert window.target.text()=='Go · Click sent to Windows'
-    with patch('context_operator.ui.window.time.monotonic',return_value=103.):
-        window.last_paint=0;window.refresh()
-        assert window.target.text()=='Live · look at something'
-        window.last_paint=0
-        c._output(None,Intent('click'),'Test dispatch error',c.generation,102.9)
-        assert window.target.text()=='Live · look at something'
-    c.pause()
-    c.input_sources.pop('keyboard-button')
+with patch('context_operator.ui.window.time.monotonic',return_value=100.):
+    window.last_paint=0;window.refresh()
+    assert list(window.rail_sources)==['iPhone','Microphone']
+    assert window.focus_panel.maximumHeight()<180
+    c.running=True;c.microphone=True;c.voice_state='standby'
+    c.voice_status='Loading speech recognition'
+    window.last_paint=0;window.refresh()
+    assert window.rail_sources['Microphone'][0].state=='standby'
+    assert window.focus_panel.maximumHeight()>180
+    c._speech({'type':'ready'},c.voice_generation)
+    window.last_paint=0;window.refresh()
+    assert window.rail_sources['Microphone'][0].state=='go'
+    c._speech({'type':'ready','device':{'fallbackFrom':'USB microphone'}},c.voice_generation)
+    c._speech({'type':'speech_start','utteranceId':1},c.voice_generation)
+    window.last_paint=0;window.refresh()
+    fallback='Using the default microphone because USB microphone isn’t connected.'
+    assert fallback in window.voice_value.text() and fallback in window.microphone_note.text()
+    c._speech({'type':'error','message':'Recognition failed'},c.voice_generation)
+    c._speech({'type':'stopped'},c.voice_generation)
+    window.last_paint=0;window.refresh()
+    assert window.rail_sources['Microphone'][0].state=='hold'
+    assert window.voice_value.text()=='Error · Recognition failed'
+    window.last_paint=0
+    c._output({'target':'Plus'},Intent('click'),'',c.generation,99.9)
+    assert window.target.text()=='Go · Click sent to Windows'
+with patch('context_operator.ui.window.time.monotonic',return_value=103.):
+    window.last_paint=0;window.refresh()
+    assert window.target.text()=='Live · look at something'
+    window.last_paint=0
+    c._output(None,Intent('click'),'Test dispatch error',c.generation,102.9)
+    assert window.target.text()=='Live · look at something'
+c.pause()
 window.last_paint=0;window.refresh()
 results['keyboard_focus_selection_and_source_feedback']='passed'
 
@@ -223,18 +225,17 @@ with tempfile.TemporaryDirectory() as folder, \
     c.running=True;c.phone=SimpleNamespace(worker=SimpleNamespace(is_alive=lambda:True),stop=Mock())
     c.gaze_source_mode='iphone';c.gaze=Gaze(0,0,time.monotonic())
     window.last_paint=0;window.refresh()
-    assert window.guide_steps[2][2].text()=='Turn on microphone'
-    c.microphone=True;c.voice_state='go'
-    window.last_paint=0;window.refresh()
     assert marks()==[True,True,True,False]
     assert window.run.isVisible() and window.run.text()=='Pause'
     with patch.object(c,'running',False):
         window.last_paint=0;window.refresh()
         assert window.run.isVisible() and window.run.text()=='Start'
     assert not window.gaze_btn.isVisible() and not window.voice_btn.isVisible()
-    window.last_paint=0
-    c._output({'target':'Plus'},Intent('click'),'',c.generation,time.monotonic())
+    window.guide_steps[3][2].click()
+    window.last_paint=0;window.refresh()
     assert marks()==[True,True,True,True] and window.start_guide.isHidden()
+    assert window.practice_active and not c.pointer_mode and not c.microphone and not c.history
+    window.navigate(0);window.last_paint=0;window.refresh()
     assert window.gaze_btn.isVisible() and window.voice_btn.isVisible()
     assert load()['first_run_done']
     c.pause();c.settings['first_run_done']=False

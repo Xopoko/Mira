@@ -27,6 +27,16 @@ QFrame#sidebar {background:#141414;}
 QFrame#panel, QWidget#guide {background:#FAFAF8;border:1px solid #D9D9D3;border-radius:10px;}
 QFrame#cue {background:#141414;border-radius:14px;}
 QFrame#mapPanel {background:#141414;border-radius:10px;}
+QFrame#practiceStage {background:#141414;border-radius:14px;}
+QLabel#practiceCount {font-family:"MONO_FONT";font-size:16px;font-weight:600;}
+QPushButton#practiceTarget {
+    background:#282826;color:#F2F2EE;border:2px solid #656560;border-radius:12px;
+    padding:10px 12px;
+}
+QPushButton#practiceTarget:hover {background:#343431;}
+QPushButton#practiceTarget:pressed {background:#40403B;}
+QPushButton#practiceTarget:focus {border-color:#83A1FF;}
+QPushButton#practiceTarget:disabled {background:#222220;color:#A6A6A0;border-color:#44443F;}
 QFrame#rule {background:#DCDCD6;border:none;}
 QFrame#railRule {background:#4A4A4A;border:none;}
 QLabel {background:transparent;border:none;}
@@ -41,8 +51,7 @@ QLabel#railText {color:#F2F2EE;}
 QLabel#railMuted {color:#A6A6A0;font-size:12px;}
 QLabel#call {color:#FFFFFF;font-size:30px;}
 QLabel#cueDetail {color:#BDBDB7;}
-QLabel#metric, QLabel#counter, QLabel#step {font-family:"MONO_FONT";}
-QLabel#counter {font-size:48px;}
+QLabel#metric, QLabel#step {font-family:"MONO_FONT";}
 QLabel#step {color:#FFFFFF;background:#141414;border-radius:11px;font-size:12px;}
 QPushButton {background:#FAFAF8;border:1px solid #8C8C85;border-radius:8px;padding:10px 18px;font-weight:600;}
 QPushButton:hover {background:#EDEDE8;}
@@ -393,7 +402,7 @@ class Window(QMainWindow):
         sl.addWidget(rule(on_stage=True));sl.addSpacing(7)
         sl.addWidget(label('Sources','railText'))
         self.rail_sources={}
-        for name in ('iPhone','Microphone','Button'):
+        for name in ('iPhone','Microphone'):
             row=QHBoxLayout();row.setSpacing(8)
             lamp=Lamp(name,on_stage=True);state=label('Off','railMuted')
             row.addWidget(lamp);row.addWidget(label(name,'railText'),1);row.addWidget(state)
@@ -427,7 +436,7 @@ class Window(QMainWindow):
         return layout
 
     def build_control(self):
-        layout=self.page('Overview','Look at something on your screen, then say “click” or press your button.')
+        layout=self.page('Overview','See where you’re looking on your screen with iPhone gaze tracking.')
         frame,box=panel('cue');box.setContentsMargins(22,17,22,17)
         row=QHBoxLayout();row.setSpacing(20)
         self.cue_lamps={}
@@ -502,7 +511,7 @@ class Window(QMainWindow):
         gaze_legend.addWidget(swatch('#86DDFF',dot=True));gaze_legend.addWidget(label('Gaze dot','railMuted'))
         legend.addWidget(self.legend_gaze)
         action_legend=QHBoxLayout();action_legend.setSpacing(6)
-        action_legend.addWidget(swatch('#F5CD69'));action_legend.addWidget(label('Yellow frame · action','railMuted'))
+        action_legend.addWidget(swatch('#F5CD69'));action_legend.addWidget(label('Yellow frame · current focus','railMuted'))
         legend.addLayout(action_legend);legend.addStretch()
         self.latency=label('','railMuted');legend.addWidget(self.latency)
         box.addWidget(legend_strip);layout.addWidget(self.focus_panel,1)
@@ -521,8 +530,8 @@ class Window(QMainWindow):
             ('Start Mira on your iPhone',GUIDE_PHONE_HINT,'Find iPhone',
              lambda:self.start_phone_search(from_guide=True)),
             ('Teach Mira your eyes · about a minute','','Set up',self.open_setup),
-            ('Connect iPhone and turn on the microphone','Set up first','Connect iPhone',self.guide_connect),
-            ('Try it','Look at “Plus” and say “click”.','Open Practice',lambda:self.navigate(2)),
+            ('Connect iPhone','Set up first','Connect iPhone',self.c.toggle_phone),
+            ('Watch the highlight follow your gaze','Look around the practice area.','Open Practice',self.open_practice),
         )
         for number,(title,hint,action,callback) in enumerate(steps,1):
             box.addWidget(rule())
@@ -603,28 +612,88 @@ class Window(QMainWindow):
         layout.addWidget(label('Run setup again if you move your iPhone or monitor. Mira doesn’t automatically save video or audio.','muted',True));layout.addStretch()
 
     def build_practice(self):
-        layout=self.page('Practice','Look at “Plus” and say “click”, or press your button.')
-        row=QHBoxLayout();self.practice_button=QPushButton('Control this practice area');self.practice_button.setObjectName('primary')
-        self.practice_button.clicked.connect(self.toggle_practice);row.addWidget(self.practice_button)
-        self.pointer=QCheckBox('Test with mouse');self.pointer.setToolTip('Use the mouse to choose a target while you practise.')
-        self.pointer.toggled.connect(self.toggle_pointer);row.addWidget(self.pointer);row.addStretch();layout.addLayout(row)
-        frame,box=panel();grid=QGridLayout();grid.setSpacing(12);self.practice_buttons={}
-        for text,row,col in (('Top left',0,0),('Plus',0,1),('Top right',0,2),('Minus',1,0),('Reset',1,1),('Clock',1,2)):
-            b=QPushButton(text);b.setAccessibleName(text);b.setMinimumHeight(66)
-            b.clicked.connect(lambda _,t=text:self.practice_action(t));grid.addWidget(b,row,col);self.practice_buttons[text]=b
-        box.addLayout(grid);self.count=label('0','counter');self.count.setAlignment(Qt.AlignCenter)
-        box.addWidget(self.count)
-        self.practice_result=label('The counter changes when you click a button.','muted',True)
-        self.practice_result.setAlignment(Qt.AlignCenter);box.addWidget(self.practice_result)
-        self.editor=QLineEdit();self.editor.setPlaceholderText('Dictation field');self.editor.setAccessibleName('Dictation field');box.addWidget(self.editor);layout.addWidget(frame)
-        self.practice_command=QLineEdit();self.practice_command.setAccessibleName('Type a command')
-        caption=label('Type a command');caption.setBuddy(self.practice_command);layout.addWidget(caption)
-        self.practice_command.returnPressed.connect(self.submit);layout.addWidget(self.practice_command)
-        self.log=QPlainTextEdit();self.log.setReadOnly(True);self.log.setMaximumBlockCount(150);self.log.setMinimumHeight(110)
-        self.log.setPlaceholderText('Mira’s actions and explanations appear here.');layout.addWidget(self.log);layout.addStretch()
+        layout = self.page('Practice', 'Look between targets and watch the highlight follow your gaze.')
+        row = QHBoxLayout()
+        row.setSpacing(12)
+        self.practice_button = QPushButton('Track gaze here')
+        self.practice_button.setObjectName('primary')
+        self.practice_button.clicked.connect(self.toggle_practice)
+        row.addWidget(self.practice_button)
+        self.pointer = QCheckBox('Test with mouse')
+        self.pointer.toggled.connect(self.toggle_pointer)
+        row.addWidget(self.pointer)
+        row.addStretch()
+        layout.addLayout(row)
+        layout.addSpacing(4)
+
+        stage = QFrame()
+        stage.setObjectName('practiceStage')
+        stage.setMinimumHeight(288)
+        grid = QGridLayout(stage)
+        grid.setContentsMargins(24, 24, 24, 24)
+        grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(24)
+        for column in range(3):
+            grid.setColumnStretch(column, 1)
+        for row_index in range(2):
+            grid.setRowStretch(row_index, 1)
+        self.practice_buttons = {}
+        targets = ('Top left', 'Plus', 'Top right', 'Minus', 'Reset', 'Clock')
+        for index, text in enumerate(targets):
+            button = QPushButton(text)
+            button.setObjectName('practiceTarget')
+            button.setAccessibleName(text)
+            button.setMinimumSize(148, 82)
+            button.setMaximumWidth(208)
+            button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            button.clicked.connect(lambda _, target=text: self.practice_action(target))
+            target_row, target_column = divmod(index, 3)
+            grid.addWidget(button, target_row, target_column, Qt.AlignVCenter)
+            self.practice_buttons[text] = button
+        layout.addWidget(stage, 1)
+        layout.addSpacing(4)
+
+        feedback = QHBoxLayout()
+        feedback.setSpacing(8)
+        feedback.addWidget(label('Counter', 'muted'))
+        self.count = label('0', 'practiceCount')
+        feedback.addWidget(self.count)
+        feedback.addSpacing(8)
+        self.practice_result = label('', 'muted', True)
+        feedback.addWidget(self.practice_result, 1)
+        layout.addLayout(feedback)
+
+        fields = QGridLayout()
+        fields.setHorizontalSpacing(12)
+        fields.setVerticalSpacing(4)
+        fields.setColumnStretch(0, 1)
+        fields.setColumnStretch(1, 1)
+        self.editor = QLineEdit()
+        self.editor.setAccessibleName('Dictation field')
+        dictation = label('Dictation')
+        dictation.setBuddy(self.editor)
+        fields.addWidget(dictation, 0, 0)
+        fields.addWidget(self.editor, 1, 0)
+        self.practice_command = QLineEdit()
+        self.practice_command.setAccessibleName('Type a command')
+        self.practice_command.setPlaceholderText('click Plus')
+        self.practice_command.returnPressed.connect(self.submit)
+        command = label('Command')
+        command.setBuddy(self.practice_command)
+        fields.addWidget(command, 0, 1)
+        fields.addWidget(self.practice_command, 1, 1)
+        layout.addLayout(fields)
+
+        self.log = QPlainTextEdit()
+        self.log.setReadOnly(True)
+        self.log.setAccessibleName('Activity')
+        self.log.setMaximumBlockCount(150)
+        self.log.setFixedHeight(66)
+        self.log.setPlaceholderText('Activity')
+        layout.addWidget(self.log)
 
     def build_settings(self):
-        layout=self.page('Settings','Connections and how you confirm actions.')
+        layout=self.page('Settings','Gaze tracking, highlights, and optional actions.')
         frame,box=panel();box.addWidget(label('iPhone','heading'))
         self.phone_transport=SettingsComboBox();self.phone_transport.setAccessibleName('iPhone connection')
         self.phone_transport.addItem('Wi‑Fi · home network','wifi')
@@ -647,13 +716,6 @@ class Window(QMainWindow):
         self.phone_transport.currentIndexChanged.connect(self.show_wifi_fields)
         box.addWidget(label('Wi‑Fi sends only eye and head data. Use a trusted home network because Mira doesn’t encrypt this connection.','muted',True))
         b=QPushButton('Save connection');b.clicked.connect(self.save_phone_connection);box.addWidget(b,0,Qt.AlignLeft);layout.addWidget(frame)
-        frame,box=panel();box.addWidget(label('Confirm actions','heading'))
-        box.addWidget(label('Say “click” or press your USB button to click the yellow target. Hold Shift to select with the mouse.','muted',True))
-        row=QHBoxLayout();self.button_enabled=QCheckBox('Use USB button');self.button_enabled.toggled.connect(self.toggle_button)
-        row.addWidget(self.button_enabled,1);self.bind_button=QPushButton('Bind button');self.bind_button.clicked.connect(self.bind_usb_button)
-        row.addWidget(self.bind_button);box.addLayout(row);self.button_hint=label('','muted',True);box.addWidget(self.button_hint)
-        self.add_check(box,'dwell_enabled','Click by holding your gaze','Keep looking at the same target to click automatically. This is off by default.')
-        self.add_slider(box,'dwell_ms','Hold time',700,2500);layout.addWidget(frame)
         self.advanced=QPushButton('Advanced');self.advanced.setObjectName('advanced')
         layout.addWidget(self.advanced)
         self.advanced_panel=QWidget();advanced=QVBoxLayout(self.advanced_panel)
@@ -691,6 +753,10 @@ class Window(QMainWindow):
         self.quiet_hint=label('Hide gaze cues while control stays on.','muted',True)
         box.addWidget(self.quiet_hint)
         advanced.addWidget(frame)
+        frame,box=panel();box.addWidget(label('Optional actions','heading'))
+        box.addWidget(label('With the microphone on, say “click” to activate the yellow target. Hold Shift to select with the mouse.','muted',True))
+        self.add_check(box,'dwell_enabled','Click by holding your gaze','Keep looking at the same target to click automatically. This is off by default.')
+        self.add_slider(box,'dwell_ms','Hold time',700,2500);advanced.addWidget(frame)
         frame,box=panel();box.addWidget(label('Voice and recognition','heading'))
         microphone_form=QFormLayout()
         microphone_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
@@ -764,7 +830,7 @@ class Window(QMainWindow):
             self.last_paint=0;self.refresh()
         if key=='highlight_mode':
             self.c.fusion.reset();self.c.dwell_id=None
-            self.c.activation_history=();self.c.action_epoch+=1
+            self.c.action_epoch+=1
             from ..core.contracts import Focus
             self.c.focus=Focus(reason='Highlight mode changed')
             self.last_paint=0;self.refresh()
@@ -972,9 +1038,13 @@ class Window(QMainWindow):
         for i,b in enumerate(self.nav):b.setChecked(i==index)
         if index!=2 and self.practice_active:self.toggle_practice()
 
+    def open_practice(self):
+        self.navigate(2)
+        if not self.practice_active:self.toggle_practice()
+
     def toggle_practice(self):
         self.practice_active=not self.practice_active;self.c.practice_window=int(self.winId()) if self.practice_active else 0
-        self.practice_button.setText('Return to apps' if self.practice_active else 'Control this practice area')
+        self.practice_button.setText('Return to desktop' if self.practice_active else 'Track gaze here')
         if self.practice_active and not self.c.running:self.c.start()
         if not self.practice_active:self.pointer.setChecked(False);self.c.pointer_mode=False
         self.c.scene=None;self.c.fusion.reset()
@@ -994,21 +1064,6 @@ class Window(QMainWindow):
         text=self.practice_command.text()
         self.practice_command.clear()
         self.c.command(text)
-
-    def bind_usb_button(self):
-        if self.c.busy or self.c.output_pending:self.add_message('Button','Wait for the current command to finish');return
-        from .button_binding import ButtonBindingDialog
-        self.c.suspend_button()
-        try:
-            dialog=ButtonBindingDialog(self)
-            if dialog.exec() and dialog.binding:
-                self.c.set_button(*dialog.binding);self.add_message('Button','USB button bound. Your regular keyboard works as usual.')
-        except (OSError,ValueError,RuntimeError) as exc:self.add_message('Button','Couldn’t save the button: '+str(exc))
-        finally:self.c.resume_button()
-
-    def toggle_button(self,enabled):
-        try:self.c.set_button_enabled(enabled)
-        except (OSError,ValueError,RuntimeError) as exc:self.add_message('Button','Couldn’t change the setting: '+str(exc))
 
     def add_message(self,who,text):
         self.log.appendPlainText(time.strftime('%H:%M:%S')+'  '+who+'\n'+text+'\n')
@@ -1061,12 +1116,6 @@ class Window(QMainWindow):
         self.finish_guide()
         self.last_paint=0;self.refresh()
 
-    def guide_connect(self):
-        if self.rail_sources['iPhone'][0].state=='go':
-            self.c.toggle_microphone()
-        else:
-            self.c.toggle_phone()
-
     def refresh_guide(self, phone_state):
         if self.settings.get('first_run_done',False):
             self.start_guide.hide()
@@ -1081,10 +1130,9 @@ class Window(QMainWindow):
         ))
         self._phone_found |= found or phone_state=='go'
         accepted=bool(self._profile_status.get('available'))
-        listening=c.voice_state=='go'
         connected=phone_state=='go'
-        done=(self._phone_found,accepted,connected and listening,bool(c.history))
-        self._guide_connected |= done[2]
+        done=(self._phone_found,accepted,connected,connected and self.practice_active)
+        self._guide_connected |= connected
         for number,((mark,_,button),complete) in enumerate(zip(self.guide_steps,done),1):
             if mark.property('done') != complete:
                 mark.setProperty('done',complete)
@@ -1097,13 +1145,12 @@ class Window(QMainWindow):
         find_button.setEnabled(self._phone_search is None)
         self.guide_steps[1][2].setEnabled(not c.output_pending)
         _,connect_note,connect_button=self.guide_steps[2]
-        waiting = phone_state=='standby' or (connected and c.microphone and not listening)
-        connect_button.setVisible(accepted and not done[2] and not waiting)
-        connect_button.setText('Turn on microphone' if connected else 'Connect iPhone')
-        hint = ('Set up first' if not accepted else 'Waiting for iPhone…' if phone_state=='standby' else
-                'Starting microphone…' if waiting else '')
+        waiting=phone_state=='standby'
+        connect_button.setVisible(accepted and not connected and not waiting)
+        hint='Set up first' if not accepted else 'Waiting for iPhone…' if waiting else ''
         connect_note.setText(hint)
         connect_note.setVisible(bool(hint))
+        self.guide_steps[3][2].setVisible(connected and not done[3])
         if all(done) and not self._guide_save_attempted:
             self.finish_guide()
 
@@ -1167,32 +1214,8 @@ class Window(QMainWindow):
         self.refresh_microphone_note()
         self.voice_btn.setText('Turn off microphone' if c.microphone else 'Turn on microphone')
 
-        bound = bool(self.settings.get('button_device_id'))
-        enabled = bound and self.settings.get('button_enabled', True)
-        with QSignalBlocker(self.button_enabled):
-            self.button_enabled.setChecked(enabled)
-        self.button_enabled.setEnabled(bound)
-        self.bind_button.setText('Change button' if bound else 'Bind button')
-        source = c.input_sources.get('keyboard-button')
-        active = c.running and 'keyboard-button' in c.active_sources
-        reader_error = getattr(source, 'error', '') if active else ''
-        if not enabled:
-            button_state, button_word, button_detail = 'off', 'Off', 'Off'
-        elif reader_error or (c.running and c.button_status.startswith('Unavailable: ')):
-            button_state, button_word = 'hold', 'Error'
-            button_detail = f'Unavailable: {reader_error}' if reader_error else c.button_status
-        elif active and getattr(source, 'running', False):
-            button_state, button_word, button_detail = 'go', 'Ready', c.button_status
-        else:
-            button_state = 'standby'
-            button_word = 'Waiting' if c.running else 'Paused'
-            button_detail = button_word
-        self.button_hint.setText(f'USB button · {button_detail}' if bound else
-                                 'Bind a separate USB button to confirm actions.')
-
         for name, state, word in (('iPhone', phone_state, phone_word),
-                                  ('Microphone', c.voice_state, voice_word),
-                                  ('Button', button_state, button_word)):
+                                  ('Microphone', c.voice_state, voice_word)):
             lamp, caption = self.rail_sources[name]
             lamp.set_state(state, word)
             caption.setText(word)
@@ -1234,7 +1257,7 @@ class Window(QMainWindow):
         self.show_gaze_check.setEnabled(not quiet and not magnetic);self.anticipation_check.setEnabled(not quiet and not magnetic)
         self.highlight_hint.setText('Quiet mode hides gaze cues.' if quiet else
                                    'Look at another element to move the yellow frame. This mode hides the gaze dot and prediction.' if magnetic else
-                                   'The blue dot follows your gaze. Yellow marks where an action will go. Purple suggests what you might choose next.')
+                                   'The blue dot follows your gaze. Yellow marks the current focus. Purple suggests what you might look at next.')
         self.legend_gaze.setVisible(not magnetic and self.settings['show_gaze'])
         self.profile_setup.setEnabled(not c.output_pending)
         phone_state=self.refresh_sources(now)
@@ -1257,10 +1280,11 @@ class Window(QMainWindow):
                     'Live · look at something' if c.running else 'Paused')
         self.target.setText(call)
         focus_reason='Look at your screen' if c.focus.reason=='Waiting for fresh gaze data' else c.focus.reason
-        self.reason.setText(('Several nearby targets · say “next”' if target and c.focus.ambiguous else focus_reason)
-                            if c.running and not quiet else 'Gaze cues are hidden.' if c.running else
+        if target and c.focus.ambiguous:
+            focus_reason='Several nearby targets · say “next”' if c.voice_state=='go' else 'Your gaze is near several targets.'
+        self.reason.setText(focus_reason if c.running and not quiet else 'Gaze cues are hidden.' if c.running else
                             'Finish Get started below.' if guide_visible else
-                            'Connect iPhone or try the controls in Practice.')
+                            'Connect iPhone or preview the highlight in Practice.')
         scene_detail = ''
         if show_map and c.scene and c.running:
             scene_detail = f'{len(c.scene.current_elements(now))} screen elements'

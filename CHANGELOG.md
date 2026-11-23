@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Bring gaze tracking and screen contours to the front of the Windows setup.
+- Make local voice commands optional during setup and ordinary tracking.
+- Remove USB confirmation buttons. The iPhone USB connection remains available.
+- Redesign Practice around the live gaze contours.
+- Add a Windows overlay demo and an illustration of the TrueDepth setup.
+
 ## 1.3.1
 
 First public release of the Windows app. The iPhone companion is at 0.3.3.

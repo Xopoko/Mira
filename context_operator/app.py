@@ -12,7 +12,6 @@ def main():
     from PySide6.QtWidgets import QApplication,QMessageBox
     from PySide6.QtGui import QFontDatabase
     from PySide6.QtNetwork import QLocalServer,QLocalSocket
-    from PySide6.QtCore import QTimer
     from .settings import load,LOCAL
     from .controller import Controller
     from .ui.window import Window
@@ -33,7 +32,6 @@ def main():
     server.newConnection.connect(show_existing)
     window.show()
     for screen in app.screens():window.overlays.append(FocusOverlay(screen,window.c.win))
-    if '--bind-button' in sys.argv:QTimer.singleShot(250,window.bind_usb_button)
     def exception(kind,error,tb):
         LOCAL.mkdir(parents=True,exist_ok=True)
         (LOCAL/'crash.log').write_text(''.join(traceback.format_exception(kind,error,tb)),encoding='utf-8')

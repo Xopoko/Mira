@@ -64,7 +64,7 @@ with tempfile.TemporaryDirectory() as folder, \
     try:
         for mode in ('radial','magnetic'):
             window.update_setting('highlight_mode',mode)
-            c.focus=focus;c.activation_history=('preserve',)
+            c.focus=focus
             epoch=c.action_epoch
             window.last_paint=0;window.refresh();overlay.animate();app.processEvents()
             assert ink(render(overlay))>0,mode
@@ -72,7 +72,6 @@ with tempfile.TemporaryDirectory() as folder, \
             window.quiet_mode_check.click();app.processEvents();overlay.animate()
             assert load()['quiet_mode'] is True
             assert c.running and c.focus is focus and c.action_epoch==epoch
-            assert c.activation_history==('preserve',)
             assert {key:c.settings[key] for key in original}==original
             assert c.settings['highlight_mode']==mode
             assert window.focus_panel.isHidden() and not window.highlight_mode.isEnabled()

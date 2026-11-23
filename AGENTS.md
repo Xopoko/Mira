@@ -1,6 +1,6 @@
-# Context Operator
+# Mira
 
-Mira is a Windows app with an iPhone companion. Start with the [README](README.md),
+Mira estimates gaze on Windows with an iPhone companion. Start with the [README](README.md),
 [architecture](docs/architecture.md), and [development guide](docs/development.md).
 Keep user-facing text and documentation in English.
 

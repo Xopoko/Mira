@@ -11,7 +11,7 @@
 <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
 <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
 <key>LSRequiresIPhoneOS</key><true/>
-<key>NSCameraUsageDescription</key><string>Mira uses the camera to track your head and eyes so you can control your computer. Normally only numbers are sent. If you turn on RGB, a cropped image of your face is sent over USB and never saved.</string>
+<key>NSCameraUsageDescription</key><string>Mira uses the camera to track your head and eyes and estimate where you are looking on your computer screen.</string>
 <key>NSLocalNetworkUsageDescription</key><string>If you choose Wi-Fi, only numeric TrueDepth data is sent to a computer on the same private Wi-Fi network.</string>
 <key>UILaunchScreen</key><dict/>
 <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>

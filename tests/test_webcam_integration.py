@@ -166,13 +166,13 @@ class ControllerWebcamTests(unittest.TestCase):
         c.gaze = Gaze(100., 100., 59., 50., 'iphone')
         c.focus = Focus(Element('old', 'Old button', 'Button', Rect(80, 80, 40, 40)))
         c.dwell_id = ('window', 'rect')
-        c.activation_history = ((59.,),)
+        source_epoch = c.gaze_source_epoch
         for stamp in times:
             c._select_gaze_source(stamp + .01)
         self.assertEqual(c.gaze_source_mode, 'webcam')
         self.assertIsNone(c.focus.target)
         self.assertIsNone(c.dwell_id)
-        self.assertEqual(c.activation_history, ())
+        self.assertGreater(c.gaze_source_epoch, source_epoch)
         self.assertEqual(c.gaze.source, 'webcam')
         c.pause()
         self.assertTrue(webcam.stopped)

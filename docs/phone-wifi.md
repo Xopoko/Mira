@@ -12,7 +12,8 @@ TrueDepth iPhone running iOS 17 or later.
    **Start Tracking**. Grant camera and local network access if prompted.
 3. On the PC, open **Overview → Get started** and select **Find iPhone**.
    Then select **Set up** and complete the gaze check.
-4. In **Overview**, select **Connect iPhone** when you want to use gaze control.
+4. In **Overview**, select **Connect iPhone**, then **Open Practice** to see
+   the gaze contours on Windows.
 
 Wi-Fi is selected on a fresh install. If the PC is set to USB, open
 **Settings → iPhone**, select **Wi-Fi · home network** and choose

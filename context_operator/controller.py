@@ -17,7 +17,6 @@ from .providers.phone_connection import PhoneConnection
 from .providers.fast_intent import FastIntent
 from .providers.learning import GazeLearning
 from .providers.clicks import MouseClicks
-from .providers.button import KeyboardButton, valid_button_vk, valid_device_id
 from .core.click_learning import ClickHistory,PointerMotion
 from .providers.anticipation import IntentLearning
 from .settings import LOCAL
@@ -33,22 +32,17 @@ class Controller(QObject):
     module=Signal(str,str)
     received_input=Signal(str,object,int)
     received_output=Signal(object,object,str,int,float)
-    received_activation=Signal(str,object,object,int)
 
-    def __init__(self,settings,*,output=None,screen_factory=ScreenProvider,model_factory=ContextModel,input_sources=None,click_source=None,button_factory=KeyboardButton,game_gaze_factory=None,webcam_factory=None):
+    def __init__(self,settings,*,output=None,screen_factory=ScreenProvider,model_factory=ContextModel,input_sources=None,click_source=None,game_gaze_factory=None,webcam_factory=None):
         super().__init__()
         self.settings=settings;self.win=Windows();self.output=output or WindowsOutput()
         self.screen_factory=screen_factory;self.model_factory=model_factory
         self.input_sources=dict(input_sources or {});self.active_sources={};self.source_counter=0
         self.source_gaze: tuple[str,Gaze] | None = None
-        self.button_factory=button_factory;self.button_status='No button bound';self.button_suspended=False
         self.game_gaze_factory=game_gaze_factory;self.game_gaze_publisher=None;self.game_gaze_unavailable=False
         self.webcam_factory=webcam_factory;self.webcam=None;self.webcam_status='Webcam off'
         self.gaze_arbitrator=GazeArbitrator();self.gaze_source_mode='none'
         self.gaze_source_epoch=0;self.revoked_utterances=set()
-        # Immutable recent frames let a queued press use what was highlighted at
-        # its native timestamp, including empty/blocked frames, never a later target.
-        self.activation_history=()
         self.fusion=Fusion(settings['stability_ms']/1000)
         self.scene=None;self.focus=Focus();self.gaze=None;self.attention=None;self.mouse_control=False;self.phone=None
         self.running=False;self.pointer_mode=False;self.microphone=False;self.busy=False
@@ -85,7 +79,6 @@ class Controller(QObject):
         self.failed.connect(self._failure)
         self.module.connect(self._module)
         self.received_input.connect(self._input)
-        self.received_activation.connect(self._activate_target)
         self.received_output.connect(self._output)
         self.timer=QTimer(self);self.timer.timeout.connect(self.tick);self.timer.start(25)
 
@@ -99,7 +92,6 @@ class Controller(QObject):
         if self.setup_close:
             close,self.setup_close=self.setup_close,None;close()
         self.running=True;self.generation+=1;generation=self.generation
-        self.activation_history=();self._start_button()
         self._start_clicks()
         self.scene_stop=threading.Event();stop=self.scene_stop
         self.status='Recognizing screen elements';self.module.emit('screen','Updating')
@@ -196,7 +188,7 @@ class Controller(QObject):
     def pause(self):
         # Revoke queued effects before stopping providers, which may wait for workers.
         self.running=False;self.generation+=1;self._close_game_gaze();self.scene_stop.set();self.busy=self.output_pending
-        self.activation_history=();self.button_status='Paused';self.action_confirmation=None
+        self.action_confirmation=None
         self.action_epoch+=1;self.voice_generation=-1
         self.stop_ranker()
         self.clicks.stop();self.click_history.clear()
@@ -260,7 +252,7 @@ class Controller(QObject):
         self._start_clicks();self.changed.emit()
 
     def _revoke_gaze_target(self):
-        self.action_epoch+=1;self.gaze_source_epoch+=1;self.activation_history=()
+        self.action_epoch+=1;self.gaze_source_epoch+=1
         self.gaze_source_mode='none'
         self.revoked_utterances.update(self.speech_focus)
         if len(self.revoked_utterances)>32:self.revoked_utterances=set(self.speech_focus)
@@ -496,7 +488,7 @@ class Controller(QObject):
         if name in self.active_sources:return
         self.source_counter+=1;token=self.source_counter
         self.active_sources[name]=(self.generation,token)
-        try:self.input_sources[name].start(lambda event:self._emit_source(name,event,token))
+        try:self.input_sources[name].start(lambda event:self.received_input.emit(name,event,token))
         except Exception:
             self.active_sources.pop(name,None)
             self._forget_source_gaze(name)
@@ -505,12 +497,7 @@ class Controller(QObject):
     def disable_source(self,name):
         self.active_sources.pop(name,None)
         self._forget_source_gaze(name)
-        try:self.input_sources[name].stop()
-        except RuntimeError as exc:
-            if name!='keyboard-button':raise
-            # A slow hook cleanup must not prevent emergency stop of the phone,
-            # microphone or pending output. Its token is already revoked.
-            self.button_status='Turning off: '+str(exc)
+        self.input_sources[name].stop()
 
     def _forget_source_gaze(self,name):
         source=f'input:{name}'
@@ -518,79 +505,6 @@ class Controller(QObject):
             self.source_gaze=None
         if self.gaze_source_mode==source:
             self._revoke_gaze_target()
-
-    def _emit_source(self,name,event,token):
-        if isinstance(event,InputEvent) and event.kind=='activate':
-            self.received_activation.emit(name,event,self.activation_history,token)
-        else:self.received_input.emit(name,event,token)
-
-    def _remember_activation(self,now):
-        frame=(now,self.focus,self.attention,self.scene,self.generation,self.action_epoch,
-               self.busy or self.output_pending,
-               self.fusion.selection_until(self.focus.target,now,self.attention))
-        self.activation_history=(*self.activation_history[-15:],frame)
-
-    def _activate_target(self,name,event,history,token):
-        now=time.monotonic()
-        if (not self.running or self.active_sources.get(name)!=(self.generation,token)
-                or not isinstance(event,InputEvent) or event.kind!='activate'
-                or not 0<=now-event.captured<.25):return
-        if self.busy or self.output_pending:return
-        frame=next((f for f in reversed(history) if f[0]<=event.captured),None)
-        if not frame:return
-        stamp,focus,gaze,source,generation,epoch,blocked,selected_until=frame
-        if (blocked or generation!=self.generation or epoch!=self.action_epoch
-                or not 0<=event.captured-stamp<.15):return
-        if not focus.target or source is None:
-            self.message.emit('Button','Look at an element until the yellow frame appears.');return
-        if selected_until<=now and not (gaze and gaze.valid and 0<=now-gaze.captured<.25):
-            self.message.emit('Button','Look at the element again to select it.');return
-        if not self.scene or not self.scene.current_target(focus.target,now):
-            self.message.emit('Button','The target changed. Wait for the yellow frame.');return
-        self.last_transcript='USB button';self.command_route='Button';self.interpret_ms=0.
-        self._decision(Intent('click',target_id=focus.target.id,click_method='pointer'),source,generation,event.captured)
-
-    def _start_button(self):
-        if not self.running or self.button_suspended:return
-        if not self.settings.get('button_enabled',True):self.button_status='Off';return
-        vk=self.settings.get('button_vk',0)
-        device=self.settings.get('button_device_id','')
-        if not valid_button_vk(vk) or not valid_device_id(device):self.button_status='Bind a separate USB button';return
-        scan=self.settings.get('button_scan_code',0);extended=self.settings.get('button_extended',0)
-        if 'keyboard-button' in self.active_sources:return
-        try:
-            source=self.input_sources.get('keyboard-button')
-            if source is None or (source.vk,source.device_id,source.scan_code,source.extended)!=(vk,device,scan,extended):
-                source=self.button_factory(vk,device,scan,extended);self.register_source('keyboard-button',source)
-            self.enable_source('keyboard-button')
-            self.button_status='Ready · one press clicks once'
-        except Exception as exc:self.button_status='Unavailable: '+str(exc)
-
-    def suspend_button(self):
-        self.button_suspended=True
-        if 'keyboard-button' in self.active_sources:self.disable_source('keyboard-button')
-        self.activation_history=()
-
-    def resume_button(self):
-        self.button_suspended=False;self._start_button();self.changed.emit()
-
-    def set_button(self,vk,name,device_id,scan_code,extended):
-        if (not valid_button_vk(vk) or not valid_device_id(device_id)
-                or type(scan_code) is not int or not 0<=scan_code<=65535
-                or type(extended) is not int or extended not in (0,2,4)):
-            raise ValueError('Choose a separate USB device and key')
-        from .settings import save
-        updated=dict(self.settings,button_vk=vk,button_name=name,button_enabled=True,
-                     button_device_id=device_id,button_scan_code=scan_code,button_extended=extended)
-        save(updated);self.suspend_button();self.settings.update(updated);self.resume_button()
-
-    def set_button_enabled(self,enabled):
-        if enabled and not valid_device_id(self.settings.get('button_device_id','')):
-            raise ValueError('Bind a separate USB button first')
-        from .settings import save
-        updated=dict(self.settings,button_enabled=bool(enabled));save(updated)
-        self.suspend_button();self.settings.update(updated);self.resume_button()
-        if not enabled:self.button_status='Off'
 
     def _input(self,name,event,generation):
         if not self.running or self.active_sources.get(name)!=(self.generation,generation):return
@@ -738,7 +652,6 @@ class Controller(QObject):
         self.focus=(self.fusion.choose_pointer(self.scene,self.attention,now,self.win.at(self.attention.x,self.attention.y))
                     if mouse_control else self.fusion.choose(self.scene,self.attention,now,
                                                             magnetic=self.settings.get('highlight_mode')=='magnetic'))
-        self._remember_activation(time.monotonic())
         target=self.focus.target
         target_key=(target.window,target.rect) if target else None
         # A transient empty scene after dispatch or a blink does not re-arm dwell.

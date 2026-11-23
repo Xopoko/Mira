@@ -1,8 +1,8 @@
 # Mira for iPhone
 
-Mira uses the iPhone's TrueDepth camera to send gaze measurements to the
-Windows app. Build and install the companion on a TrueDepth iPhone running
-iOS 17 or later.
+Mira uses the iPhone's TrueDepth camera to measure your eyes and head pose.
+The Windows app uses those measurements to estimate where you are looking.
+Build and install the companion on a TrueDepth iPhone running iOS 17 or later.
 
 <img src="../docs/images/mira-iphone.png" width="280" alt="Mira's iPhone companion ready to start tracking in the iOS Simulator">
 

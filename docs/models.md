@@ -29,7 +29,7 @@ Mira transcribes speech on your PC using Parakeet and Silero VAD. Short commands
 
    When Mira finds a sibling `LocalModels` directory or you set `MIRA_LOCAL_MODELS_ROOT`, the manager's policy controls access to local models.
 
-4. In **Overview**, choose **Turn on microphone**. With the first-run guide open, follow its connection steps or choose **Hide guide** to show the regular controls. Mira uses the system microphone by default. To select a different input, use **Settings → Advanced → Voice and recognition**, save, and turn the microphone on again.
+4. In **Overview**, choose **Turn on microphone**. If the first-run guide is still open, finish gaze setup or choose **Hide guide** to show that control. Mira uses the system microphone by default. To select a different input, use **Settings → Advanced → Voice and recognition**, save, and turn the microphone on again.
 
 ## Interpret complex commands
 

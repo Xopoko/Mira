@@ -54,14 +54,15 @@ class OutputTests(unittest.TestCase):
         win.at=Mock(return_value=12);win.shift_down=Mock(return_value=False)
         win.activate=Mock();win.send=Mock();win.bounds=Mock(return_value=Rect(0,0,1920,1080))
         output.validate_visual=Mock();output.validate_control=Mock()
-        output.semantic=Mock(return_value=True)
+        output.semantic=Mock(return_value=False)
         target=Element('button','Yellow button','Button',Rect(60,40,150,40),12,pid=7)
         scene=Scene(1,time.monotonic(),Rect(0,0,800,600),(target,),12)
         return output,target,scene
-    def test_pointer_click_on_uia_button_uses_one_native_mouse_sequence(self):
+    def test_click_falls_back_to_one_native_mouse_sequence(self):
         output,target,scene=self.pointer_click_fixture()
-        result=output.execute(Intent('click',target_id=target.id,click_method='pointer'),target,scene)
-        output.semantic.assert_not_called()
+        intent=Intent('click',target_id=target.id)
+        result=output.execute(intent,target,scene)
+        output.semantic.assert_called_once_with(intent,target)
         output.validate_visual.assert_called_once_with(target)
         output.validate_control.assert_called_once_with(target)
         output.win.send.assert_called_once()
@@ -84,31 +85,32 @@ class OutputTests(unittest.TestCase):
     def test_pointer_click_rejects_changed_owner_before_sending(self):
         output,target,scene=self.pointer_click_fixture();output.win.pid.return_value=8
         with self.assertRaisesRegex(RuntimeError,'The app restarted'):
-            output.execute(Intent('click',target_id=target.id,click_method='pointer'),target,scene)
+            output.execute(Intent('click',target_id=target.id),target,scene)
         output.win.send.assert_not_called();output.semantic.assert_not_called()
     def test_pointer_click_rejects_occluded_target_before_sending(self):
         output,target,scene=self.pointer_click_fixture();output.win.at.return_value=99
         with self.assertRaisesRegex(RuntimeError,'Another window covers the element'):
-            output.execute(Intent('click',target_id=target.id,click_method='pointer'),target,scene)
-        output.win.send.assert_not_called();output.semantic.assert_not_called()
+            output.execute(Intent('click',target_id=target.id),target,scene)
+        output.win.send.assert_not_called()
     def test_pointer_click_rejects_stale_scene_before_sending(self):
         output,target,scene=self.pointer_click_fixture()
         scene=Scene(scene.id,time.monotonic()-4,scene.bounds,scene.elements,scene.window)
         with self.assertRaisesRegex(RuntimeError,'The screen changed'):
-            output.execute(Intent('click',target_id=target.id,click_method='pointer'),target,scene)
+            output.execute(Intent('click',target_id=target.id),target,scene)
         output.win.send.assert_not_called();output.semantic.assert_not_called()
     def test_pointer_click_cancelled_before_send(self):
         output,target,scene=self.pointer_click_fixture();output.set_guard(lambda:False)
         with self.assertRaisesRegex(RuntimeError,'Control stopped'):
-            output.execute(Intent('click',target_id=target.id,click_method='pointer'),target,scene)
-        output.win.send.assert_not_called();output.semantic.assert_not_called()
-    def test_pointer_click_send_failure_is_not_retried_semantically_or_natively(self):
+            output.execute(Intent('click',target_id=target.id),target,scene)
+        output.win.send.assert_not_called()
+    def test_failed_native_click_is_not_retried(self):
         output,target,scene=self.pointer_click_fixture()
+        intent=Intent('click',target_id=target.id)
         output.win.send.side_effect=RuntimeError('Windows rejected the input')
         with self.assertRaisesRegex(RuntimeError,'rejected the input'):
-            output.execute(Intent('click',target_id=target.id,click_method='pointer'),target,scene)
+            output.execute(intent,target,scene)
         output.win.send.assert_called_once()
-        output.semantic.assert_not_called()
+        output.semantic.assert_called_once_with(intent,target)
     def test_semantic_identity_handles_unnamed_and_long_labels(self):
         for name in ('','Long label '*25):
             with self.subTest(name_length=len(name)):

@@ -66,5 +66,5 @@ parameter selection.
 - [iPhone Wi-Fi](phone-wifi.md) and [webcam fallback](webcam.md)
 - [Voice and models](models.md) and [desktop context](desktop-context.md)
 - [Click learning](click-learning.md) and [next-target prediction](anticipation.md)
-- [USB button](usb-button.md) and [game gaze feed](game-gaze.md)
+- [Game gaze feed](game-gaze.md)
 - [Overlay performance](overlay-performance.md)

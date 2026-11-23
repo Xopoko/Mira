@@ -186,8 +186,6 @@ class WindowsOutput:
         action = intent.action
         if action not in WINDOWS_ACTIONS:
             raise RuntimeError(f'Unsupported action ({action})')
-        if intent.click_method not in ('auto','pointer') or (intent.click_method=='pointer' and action!='click'):
-            raise RuntimeError('Unknown click type')
         if action == 'scroll' and intent.direction not in SCROLL_DIRECTIONS:
             raise RuntimeError('Choose a scroll direction: up or down')
         if action in TARGET_ACTIONS and target is None:
@@ -206,10 +204,8 @@ class WindowsOutput:
         if target and self.win.pid(hwnd)!=target.pid:raise RuntimeError('The app restarted')
         if hwnd==scene.window and scene.window_rect and self.win.rect(hwnd)!=scene.window_rect:
             raise RuntimeError('The window moved. Look at the target again.')
-        # Choose pointer input before any effect: some UIA Invoke/Select providers
-        # acknowledge a command without delivering the mouse events an app uses.
         # Never fall back or repeat a semantic action that was already sent.
-        if intent.click_method!='pointer' and self.semantic(intent,target):
+        if self.semantic(intent,target):
             return {'action':action,'target':target.label,'dispatched':True,'route':'uia'}
         if not self.is_active():raise RuntimeError('Control stopped')
         if self.win.shift_down():raise RuntimeError('Release Shift and repeat the command. This target uses standard Windows input.')

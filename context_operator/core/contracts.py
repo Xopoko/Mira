@@ -1,6 +1,6 @@
 """Provider-neutral contracts. Coordinates are physical virtual-desktop pixels."""
 from dataclasses import dataclass
-from typing import Protocol, Callable, Literal
+from typing import Protocol, Callable
 import math
 
 TARGET_ACTIONS = frozenset({'click', 'double_click', 'right_click', 'move', 'scroll'})
@@ -139,7 +139,6 @@ class Intent:
     keys: tuple[str, ...] = ()
     amount: int = 3
     reply: str = ''
-    click_method: Literal['auto','pointer'] = 'auto'
 
 @dataclass(frozen=True)
 class InputEvent:

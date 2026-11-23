@@ -35,6 +35,24 @@ class LifecycleTests(unittest.TestCase):
             self.assertEqual(loaded['gaze_mode'],'truedepth');self.assertEqual(loaded['truedepth_profile'],'motion')
             self.assertNotIn('hybrid_enabled',loaded);self.assertNotIn('hybrid_use',loaded)
             self.assertEqual(json.loads(target.read_text(encoding='utf-8')),raw)
+    def test_legacy_usb_button_settings_are_discarded_on_load_and_save(self):
+        from context_operator.settings import load, save
+
+        with tempfile.TemporaryDirectory() as folder, patch('context_operator.settings.LOCAL',Path(folder)):
+            target=Path(folder)/'settings.json'
+            retired={'button_enabled':True,'button_vk':13,'button_device_id':'a'*64,
+                     'button_name':'Test','button_scan_code':28,'button_extended':0}
+            raw=dict(retired,phone_transport='usb',microphone='Saved microphone')
+            target.write_text(json.dumps(raw),encoding='utf-8')
+
+            loaded=load()
+            self.assertTrue(retired.keys().isdisjoint(loaded))
+            self.assertEqual(json.loads(target.read_text(encoding='utf-8')),raw)
+            save(loaded)
+
+            saved=json.loads(target.read_text(encoding='utf-8'))
+            self.assertTrue(retired.keys().isdisjoint(saved))
+            self.assertEqual((saved['phone_transport'],saved['microphone']),('usb','Saved microphone'))
     def test_late_model_result_after_stop_does_not_act(self):
         self.c.pause();self.c._decision(Intent('click',target_id='button'),self.scene,4,time.monotonic())
         self.c.output.execute.assert_not_called()
@@ -174,7 +192,6 @@ class LifecycleTests(unittest.TestCase):
         c.focus=Focus(self.el)
         c.microphone=True;c.voice_generation=3
         c._speech({'type':'speech_start','utteranceId':1},3)
-        c._remember_activation(now)
         source_epoch,action_epoch=c.gaze_source_epoch,c.action_epoch
 
         c.webcam=Mock()
@@ -191,7 +208,6 @@ class LifecycleTests(unittest.TestCase):
         self.assertIsNone(c.gaze)
         self.assertIsNone(c.attention)
         self.assertIsNone(c.focus.target)
-        self.assertFalse(c.activation_history)
         self.assertGreater(c.action_epoch,action_epoch)
         with patch.object(c,'command') as command:
             c._speech({'type':'final','utteranceId':1,'text':'click'},3)
@@ -298,7 +314,6 @@ class LifecycleTests(unittest.TestCase):
         self.assertTrue(source.stopped)
         self.assertIsNone(c.attention)
         self.assertIsNone(c.focus.target)
-        self.assertFalse(c.activation_history)
         self.assertGreater(c.gaze_source_epoch,epoch)
 
         c.enable_source('gaze-fixture')
