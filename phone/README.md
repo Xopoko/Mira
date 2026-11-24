@@ -29,16 +29,15 @@ access.
 
 ## Connection and data
 
-Wi-Fi is the default for new installs. It serves numeric gaze measurements on
-TCP port `39472` over the private local network. The connection has no
-authentication or encryption. Restrict it to a trusted network. If the
-listener fails to open, the phone retries for up to 30 seconds before it
-shows the reason.
+The app sends numeric measurements only. Wi-Fi is the default for new
+installs and serves them on TCP port `39472` over the private local network.
+The [Wi-Fi guide](../docs/phone-wifi.md) describes the connection and its
+limits.
 
-USB is an optional mode for an existing paired USB bridge on Windows. Set
-`MIRA_IPHONE_USB_BRIDGE` to the path of its trusted Python adapter exporting
-`open_stream()`. USB uses a loopback listener on port `39471`. Enabling RGB in
-USB mode allows the bridge to request an in-memory face crop. Stop or
+USB needs a separate USB bridge on Windows, which this repository does not
+include. Set `MIRA_IPHONE_USB_BRIDGE` to the path of the bridge's Python
+adapter. The adapter must export `open_stream()` and the `USBError` exception
+it raises. On the phone, USB uses a loopback listener on port `39471`. Stop or
 backgrounding closes the active listener and stops ARKit.
 
 ## Checks

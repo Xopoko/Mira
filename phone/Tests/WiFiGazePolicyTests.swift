@@ -2,7 +2,7 @@ import XCTest
 @testable import MyEyeTrackingPhone
 
 final class WiFiGazePolicyTests: XCTestCase {
-    func testOnlyRFC1918IPv4AddressesAreAdvertised() {
+    func testClassifiesRFC1918IPv4Addresses() {
         for address in ["10.0.0.8", "172.16.0.2", "172.31.255.254", "192.168.1.88"] {
             XCTAssertTrue(WiFiGazePolicy.isPrivateLANIPv4(address), address)
         }
@@ -12,9 +12,9 @@ final class WiFiGazePolicyTests: XCTestCase {
         }
     }
 
-    func testWiFiListenerAcceptsOnlyOneNumericPullCommand() {
+    func testPolicyAcceptsExactlyOneCompleteGETCommand() {
         XCTAssertTrue(WiFiGazePolicy.accepts(Data("GET\n".utf8)))
-        for request in ["GETRGB\n", "POST\n", "GET", "GET\nGET\n"] {
+        for request in ["PING\n", "POST\n", "GET", "GET\nGET\n"] {
             XCTAssertFalse(WiFiGazePolicy.accepts(Data(request.utf8)), request)
         }
         XCTAssertEqual(WiFiGazePolicy.port, 39472)

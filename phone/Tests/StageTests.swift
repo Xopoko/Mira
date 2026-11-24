@@ -9,7 +9,8 @@ final class StageTests: XCTestCase {
             StageCall.resolve(running: running, connected: connected, tracked: tracked, failure: failure,
                               status: "Face out of view", transport: .wifi, endpoint: endpoint)
         }
-        XCTAssertEqual(call(running: false, connected: false, tracked: false).lamp, .off)
+        XCTAssertEqual(call(running: false, connected: false, tracked: false),
+                       StageCall(word: "Ready", detail: "Put iPhone under your screen, then tap Start Tracking.", lamp: .off))
         XCTAssertEqual(call(running: false, failure: "Allow camera access in Settings"),
                        StageCall(word: "Hold", detail: "Allow camera access in Settings", lamp: .hold))
         XCTAssertEqual(call(connected: false),
@@ -17,7 +18,7 @@ final class StageTests: XCTestCase {
         XCTAssertEqual(call(connected: false, endpoint: "192.168.1.24").detail,
                        "Waiting for your PC over Wi-Fi. iPhone address: 192.168.1.24.")
         XCTAssertEqual(call(tracked: false), StageCall(word: "Standby", detail: "Face out of view", lamp: .standby))
-        XCTAssertEqual(call().lamp, .go)
+        XCTAssertEqual(call(), StageCall(word: "Go", detail: "Your PC is connected. Tracking your head and eyes.", lamp: .go))
     }
 
     func testPlanUsesThePersonsOwnLeftAndRightUnderEitherCameraMirroring() {

@@ -8,13 +8,13 @@ final class PhoneTextTests: XCTestCase {
         XCTAssertEqual(EyeTracker.perSecondText(59.6), "60 per second")
     }
 
-    func testAppUsesTheMiraIcon() {
+    func testBundleDeclaresAppIconAsPrimaryIconName() {
         let icons = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any]
         let primary = icons?["CFBundlePrimaryIcon"] as? [String: Any]
         XCTAssertEqual(primary?["CFBundleIconName"] as? String, "AppIcon")
     }
 
-    func testSystemPromptsAndAppLanguageAreEnglish() {
+    func testBundleDeclaresEnglishRegionAndMiraNameWithNonCyrillicPermissionText() {
         let info = Bundle.main.infoDictionary ?? [:]
         XCTAssertEqual(info["CFBundleDevelopmentRegion"] as? String, "en")
         XCTAssertEqual(info["CFBundleDisplayName"] as? String, "Mira")

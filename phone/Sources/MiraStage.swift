@@ -52,7 +52,7 @@ struct StageCall: Equatable {
                         status: String, transport: PhoneTransport, endpoint: String) -> StageCall {
         if !running {
             if let failure { return StageCall(word: "Hold", detail: failure, lamp: .hold) }
-            return StageCall(word: "Ready", detail: "Put iPhone under your screen, then tap Start.", lamp: .off)
+            return StageCall(word: "Ready", detail: "Put iPhone under your screen, then tap Start Tracking.", lamp: .off)
         }
         if !connected {
             if transport == .wifi && !endpoint.isEmpty {
@@ -60,7 +60,7 @@ struct StageCall: Equatable {
             }
             return StageCall(word: "Standby", detail: "Waiting for your PC over \(transport.title)…", lamp: .standby)
         }
-        if tracked { return StageCall(word: "Go", detail: "Mira on your PC now follows your gaze.", lamp: .go) }
+        if tracked { return StageCall(word: "Go", detail: "Your PC is connected. Tracking your head and eyes.", lamp: .go) }
         return StageCall(word: "Standby", detail: status, lamp: .standby)
     }
 }
@@ -261,7 +261,7 @@ struct PhoneView: View {
                             .foregroundStyle(Stage.ink)
                             .textSelection(.enabled)
                     }
-                    Text("Private local network only. Numeric data is sent unencrypted. RGB is off over Wi-Fi.")
+                    Text("Private local network only. Numeric data is sent unencrypted.")
                         .font(.footnote).foregroundStyle(Stage.pencil)
                 }
             }
@@ -274,13 +274,6 @@ struct PhoneView: View {
             StatusRow(lamp: tracker.depthReceived ? .go : (tracker.running ? .standby : .off),
                       name: "TrueDepth", value: tracker.depthText)
             StatusRow(lamp: tracker.running ? .go : .off, name: "Camera updates", value: tracker.rateText, numeric: true)
-            StageRule()
-            Toggle("RGB for Model Comparison (USB)", isOn: $tracker.rgbEnabled)
-                .foregroundStyle(Stage.ink)
-                .disabled(tracker.transport == .wifi)
-                .onChange(of: tracker.rgbEnabled) { _, _ in tracker.configureRGB() }
-            Text("Sent only when Windows asks: a cropped face image over USB. Nothing is saved.")
-                .font(.footnote).foregroundStyle(Stage.pencil)
             StageRule()
             Button("What’s Sent to Your Computer") { privacy = true }
                 .font(.callout.weight(.semibold))
@@ -559,8 +552,7 @@ struct PrivacySheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
-                    item("Numbers by default", "Standard mode sends numeric head and eye data.")
-                    item("Face images only on request", "RGB mode also sends a cropped image of your face, but only when Windows asks to compare models. Face images stay in memory on iPhone and on Windows. They’re never written to disk. RGB has its own switch, so you can turn it off separately.")
+                    item("Numbers only", "Mira sends numeric head and eye measurements. No images leave your iPhone.")
                     item("No cloud, no microphone", "No cloud services or microphone are used.")
                     item("USB and Wi-Fi", "USB needs a bridge configured on Windows. Wi-Fi sends unencrypted gaze measurements over the local network. Use a network you trust.")
                     item("Stopping", "Leaving the app, locking the screen, or tapping Stop turns off the camera and stops sending.")

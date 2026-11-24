@@ -6,7 +6,6 @@ import QuartzCore
 struct NetworkFixture {
     static func main() {
         do {
-            try verifyPolicy()
             try verifyServer()
             try verifyRetry()
             print("Phone Wi-Fi loopback fixture passed.")
@@ -14,20 +13,6 @@ struct NetworkFixture {
             let reason = (error as? FixtureError)?.reason ?? "fixture_assertion"
             print("Phone Wi-Fi loopback fixture failed (\(reason)).")
             exit(1)
-        }
-    }
-
-    static func verifyPolicy() throws {
-        let accepted = ["10.0.0.1", "172.16.0.1", "172.31.255.254", "192.168.1.88"]
-        let rejected = ["172.15.255.255", "172.32.0.1", "192.167.1.1", "127.0.0.1",
-                        "169.254.2.3", "8.8.8.8", "::1", "192.168.1", "10.0.0.1.2",
-                        "10..0.1", "", "010.0.0.1"]
-        guard accepted.allSatisfy(WiFiGazePolicy.isPrivateLANIPv4),
-              rejected.allSatisfy({ !WiFiGazePolicy.isPrivateLANIPv4($0) }),
-              WiFiGazePolicy.accepts(Data("GET\n".utf8)),
-              !WiFiGazePolicy.accepts(Data("GETRGB\n".utf8)),
-              !WiFiGazePolicy.accepts(Data("GET\nGET\n".utf8)) else {
-            throw FixtureError.failed("policy")
         }
     }
 
@@ -67,10 +52,10 @@ struct NetworkFixture {
               let age2 = secondReply["ageMs"] as? Double,
               age2 > age1 + 35 else { throw FixtureError.failed("stale_age_growth") }
 
-        let rgb = try connect(port: port)
-        sendAll(rgb, Data("GETRGB\n".utf8))
-        guard reachesEOF(rgb) else { Darwin.close(rgb); throw FixtureError.failed("getrgb_rejection") }
-        Darwin.close(rgb)
+        let invalid = try connect(port: port)
+        sendAll(invalid, Data("PING\n".utf8))
+        guard reachesEOF(invalid) else { Darwin.close(invalid); throw FixtureError.failed("invalid_command_rejection") }
+        Darwin.close(invalid)
 
         let pipelined = try connect(port: port)
         sendAll(pipelined, Data("GET\nGET\n".utf8))
@@ -164,8 +149,7 @@ struct NetworkFixture {
 
     static func packet(seq: Int) -> [String: Any] {
         ["version": 1, "session": "loopback-fixture", "seq": seq,
-         "timestamp": CACurrentMediaTime(), "tracked": true, "trueDepth": true,
-         "depthFrame": true, "ageMs": 0]
+         "timestamp": CACurrentMediaTime(), "tracked": true, "trueDepth": true, "ageMs": 0]
     }
 
     static func connect(port: UInt16) throws -> Int32 {

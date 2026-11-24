@@ -1,12 +1,10 @@
 import SwiftUI
 import UIKit
-import Darwin
 import ARKit
 import AVFoundation
 import Network
 import QuartzCore
-import Vision
-import CoreImage
+import simd
 
 @main
 struct MyEyeTrackingPhoneApp: App {
@@ -46,7 +44,6 @@ enum PhoneTransport: String, CaseIterable, Identifiable, Hashable {
 }
 
 final class EyeTracker: NSObject, ObservableObject, ARSessionDelegate {
-    @Published var rgbEnabled = false
     // The connection choice survives relaunches, so iPhone and PC stay on the same transport.
     @Published var transport: PhoneTransport = EyeTracker.savedTransport {
         didSet {
@@ -86,15 +83,10 @@ final class EyeTracker: NSObject, ObservableObject, ARSessionDelegate {
     private var priorIdleTimerDisabled: Bool?
     private var priorBrightness: CGFloat?
     private var startGeneration = 0
-    private let rgbEncoder = RGBFaceEncoder()
-    private var rgbBusy = false
-    private var lastRGB = 0.0
     // Live plan state; touched only on `queue`.
     private var planEnabled = true
     private var lastPlan = 0.0
     private var smoothPlan: PlanPose?
-
-    func configureRGB() { server.setRGBEnabled(rgbEnabled) }
 
     var cameraBlocked: Bool {
         let access = AVCaptureDevice.authorizationStatus(for: .video)
@@ -140,7 +132,7 @@ final class EyeTracker: NSObject, ObservableObject, ARSessionDelegate {
             DispatchQueue.main.async {
                 guard let self = self, self.running, self.activeTransport == .wifi else { return }
                 self.stop()
-                self.fail("Couldn’t open Wi-Fi port 39472 (\(reason)). Tap Start Tracking to try again.")
+                self.fail("Couldn’t open Wi-Fi port \(WiFiGazePolicy.port) (\(reason)). Tap Start Tracking to try again.")
             }
         }
         refreshWiFiEndpoint()
@@ -241,7 +233,6 @@ final class EyeTracker: NSObject, ObservableObject, ARSessionDelegate {
                 self.depthText = "Waiting for depth data…"
                 if requestedTransport == .usb {
                     self.server.start()
-                    self.server.setRGBEnabled(self.rgbEnabled)
                     self.wifiServer.stop()
                     self.connectionText = "Waiting for the USB bridge…"
                 } else {
@@ -279,13 +270,12 @@ final class EyeTracker: NSObject, ObservableObject, ARSessionDelegate {
         guard acceptingFrames else { return }
         sequence += 1
         let now = CACurrentMediaTime()
-        let depth = frame.capturedDepthData != nil
-        if depth { depthFrames += 1 }
+        if frame.capturedDepthData != nil { depthFrames += 1 }
         let face = frame.anchors.compactMap { $0 as? ARFaceAnchor }.first
         let valid = face?.isTracked == true
         var packet: [String: Any] = ["version": 1, "session": sessionID, "seq": sequence,
                                     "timestamp": frame.timestamp, "tracked": valid,
-                                    "trueDepth": trueDepthFormat, "depthFrame": depth]
+                                    "trueDepth": trueDepthFormat]
         if let face = face, valid {
             let transform = simd_inverse(frame.camera.transform) * face.transform
             let left = transform * face.leftEyeTransform
@@ -297,31 +287,11 @@ final class EyeTracker: NSObject, ObservableObject, ARSessionDelegate {
             packet["lookAt"] = [look.x, look.y, look.z]
             packet["blink"] = [face.blendShapes[.eyeBlinkLeft]?.floatValue ?? 0,
                                face.blendShapes[.eyeBlinkRight]?.floatValue ?? 0]
-
         }
         if activeTransport == .wifi {
             wifiServer.update(packet: packet, captured: frame.timestamp)
         } else {
             server.update(packet: packet, captured: frame.timestamp)
-        }
-        if activeTransport == .usb && valid && !rgbBusy && now-lastRGB >= 1.0/15.0 && server.wantsRGB() {
-            rgbBusy = true
-            lastRGB = now
-            let frameSession = sessionID
-            let numeric = packet
-            rgbEncoder.encode(frame.capturedImage) { [weak self] jpeg in
-                guard let self = self else { return }
-                self.queue.async {
-                    self.rgbBusy = false
-                    guard self.acceptingFrames, self.sessionID == frameSession,
-                          self.server.wantsRGB(), let jpeg = jpeg else { return }
-                    var result = numeric
-                    result["rgb"] = ["format": "jpeg", "width": 448, "height": 448,
-                                     "orientation": "portrait-unmirrored", "timestamp": frame.timestamp,
-                                     "data": jpeg.base64EncodedString()]
-                    self.server.updateRGB(packet: result, captured: frame.timestamp)
-                }
-            }
         }
         if planEnabled && now-lastPlan >= 1.0/30.0 {
             lastPlan = now
@@ -377,42 +347,6 @@ final class EyeTracker: NSObject, ObservableObject, ARSessionDelegate {
     }
 }
 
-// RGB processing is off the ARKit queue; at most one frame is in flight.
-final class RGBFaceEncoder {
-    private let queue = DispatchQueue(label: "local.myeyetracking.rgb", qos: .userInitiated)
-    private let context = CIContext(options: [.cacheIntermediates: false])
-    func encode(_ buffer: CVPixelBuffer, completion: @escaping (Data?) -> Void) {
-        queue.async {
-            autoreleasepool {
-                // Fixed portrait, unmirrored sensor orientation. Screen calibration
-                // binds this convention; it must not change with preview mirroring.
-                var image = CIImage(cvPixelBuffer: buffer).oriented(.right)
-                let scale = min(1.0, 720.0/max(image.extent.width, image.extent.height))
-                image = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-                image = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY))
-                let request = VNDetectFaceRectanglesRequest()
-                do { try VNImageRequestHandler(ciImage: image, orientation: .up).perform([request]) }
-                catch { completion(nil); return }
-                guard let faces = request.results, faces.count == 1, let face = faces.first,
-                      face.confidence >= 0.7 else { completion(nil); return }
-                let box = face.boundingBox
-                var rect = CGRect(x: box.minX*image.extent.width, y: box.minY*image.extent.height,
-                                  width: box.width*image.extent.width, height: box.height*image.extent.height)
-                rect = rect.insetBy(dx: -rect.width*0.10, dy: -rect.height*0.10).intersection(image.extent)
-                guard rect.width >= 100, rect.height >= 100 else { completion(nil); return }
-                var crop = image.cropped(to: rect)
-                crop = crop.transformed(by: CGAffineTransform(translationX: -rect.minX, y: -rect.minY))
-                crop = crop.transformed(by: CGAffineTransform(scaleX: 448/rect.width, y: 448/rect.height))
-                crop = crop.cropped(to: CGRect(x: 0, y: 0, width: 448, height: 448))
-                let data = self.context.jpegRepresentation(of: crop, colorSpace: CGColorSpaceCreateDeviceRGB(),
-                    options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.88])
-                completion(data)
-            }
-        }
-    }
-}
-
-// Pull protocol: GET keeps the numeric path; GETRGB opts into face crops.
 // Only loopback is bound. usbmuxd forwards the exact phone's port through USB.
 final class USBServer {
     private let port: UInt16 = 39471
@@ -423,36 +357,11 @@ final class USBServer {
     private final class Client {
         let connection: NWConnection
         var buffer = Data()
-        var rgbRequestedUntil = 0.0
         init(_ connection: NWConnection) { self.connection = connection }
     }
-    // A numeric reader and an optional RGB reader have independent demand/buffers.
     private var clients: [ObjectIdentifier: Client] = [:]
     private var latest: [String: Any]?
     private var captured = 0.0
-    private var rgbEnabled = false
-    private var latestRGB: [String: Any]?
-    private var rgbCaptured = 0.0
-
-    private func hasRGBDemand() -> Bool {
-        let now = CACurrentMediaTime()
-        return clients.values.contains { now < $0.rgbRequestedUntil }
-    }
-    func setRGBEnabled(_ enabled: Bool) {
-        queue.async {
-            self.rgbEnabled = enabled
-            self.latestRGB = nil
-            for client in self.clients.values { client.rgbRequestedUntil = 0 }
-        }
-    }
-    func wantsRGB() -> Bool { queue.sync { rgbEnabled && hasRGBDemand() } }
-    func updateRGB(packet: [String: Any], captured: Double) {
-        queue.async {
-            guard self.rgbEnabled, self.hasRGBDemand() else { return }
-            self.latestRGB = packet
-            self.rgbCaptured = captured
-        }
-    }
 
     func start() {
         queue.async { [self] in
@@ -477,7 +386,6 @@ final class USBServer {
                         case .failed, .cancelled:
                             self.clients.removeValue(forKey: id)
                             connection.cancel()
-                            if !self.hasRGBDemand() { self.latestRGB = nil }
                             self.onConnection?(!self.clients.isEmpty)
                         default: break
                         }
@@ -498,7 +406,7 @@ final class USBServer {
         let previous = clients.values.map { $0.connection }
         clients.removeAll()
         for connection in previous { connection.cancel() }
-        latest = nil; latestRGB = nil
+        latest = nil
         onConnection?(false)
     }
     private func receive(_ connection: NWConnection) {
@@ -512,21 +420,9 @@ final class USBServer {
             while let end = client.buffer.firstIndex(of: 10) {
                 let request = Data(client.buffer.prefix(through: end))
                 client.buffer.removeSubrange(...end)
-                let wantsRGB = request == Data("GETRGB\n".utf8)
-                guard wantsRGB || request == Data("GET\n".utf8) else { connection.cancel(); return }
-                var packet: [String: Any]
-                var captured = self.captured
-                if wantsRGB {
-                    client.rgbRequestedUntil = CACurrentMediaTime()+0.75
-                    packet = self.rgbEnabled ? (self.latestRGB ?? ["version": 1, "tracked": false, "rgbStatus": "warming"]) : ["version": 1, "rgbStatus": "disabled"]
-                    captured = self.rgbCaptured
-                } else {
-                    client.rgbRequestedUntil = 0
-                    if !self.hasRGBDemand() { self.latestRGB = nil }
-                    packet = self.latest ?? ["version": 1, "tracked": false]
-                }
-                packet["parallelGazeStreams"] = true
-                packet["ageMs"] = max(0, (CACurrentMediaTime()-captured)*1000)
+                guard request == Data("GET\n".utf8) else { connection.cancel(); return }
+                var packet = self.latest ?? ["version": 1, "tracked": false]
+                packet["ageMs"] = max(0, (CACurrentMediaTime()-self.captured)*1000)
                 guard JSONSerialization.isValidJSONObject(packet),
                       let data = try? JSONSerialization.data(withJSONObject: packet, options: [.sortedKeys]) else {
                     connection.cancel(); return
