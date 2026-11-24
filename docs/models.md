@@ -17,24 +17,35 @@ Mira transcribes speech on your PC using Parakeet and Silero VAD. Short commands
      silero_vad.onnx
    ```
 
-3. For a standalone setup, close Mira and set the opt-in in PowerShell.
-
-   ```powershell
-   $env:MIRA_ENABLE_STANDALONE_MODELS = '1'
-   ```
-
-   Launch a package install with `.\.venv\Scripts\pythonw.exe -m context_operator.app`
-   from the install folder. From a source checkout, run
-   `.\.venv\Scripts\pythonw.exe launch.pyw` from the repository root.
-
-   When Mira finds a sibling `LocalModels` directory or you set `MIRA_LOCAL_MODELS_ROOT`, the manager's policy controls access to local models.
+3. Allow Mira to start local models. See [Local model access](#local-model-access).
 
 4. In **Overview**, choose **Turn on microphone**. If the first-run guide is still open, finish gaze setup or choose **Hide guide** to show that control. Mira uses the system microphone by default. To select a different input, use **Settings → Advanced → Voice and recognition**, save, and turn the microphone on again.
+
+## Local model access
+
+Mira starts a local model (speech recognition, the webcam runtime, target
+reranking, screen recognition or a loopback command model) only when it is
+allowed to. Close Mira and set the opt-in in PowerShell, then launch Mira from
+the same window.
+
+```powershell
+$env:MIRA_ENABLE_STANDALONE_MODELS = '1'
+```
+
+Launch a package install with `.\.venv\Scripts\pythonw.exe -m context_operator.app`
+from the install folder. From a source checkout, run
+`.\.venv\Scripts\pythonw.exe launch.pyw` from the repository root.
+
+The opt-in applies only when `MIRA_LOCAL_MODELS_ROOT` is unset and there is no
+`LocalModels` folder next to the Mira folder. LocalModels is a separate model
+manager that is not part of this repository. When it is present, Mira asks its
+start policy before loading a model and reads models from that installation
+instead of Mira's data directory.
 
 ## Interpret complex commands
 
 Under **Settings → Advanced → Voice and recognition**, set **Model location**, **Model name**, and **Model address**, then save. Use the base URL ending in `/v1` if your server exposes its API there. Mira appends `/chat/completions` and asks for an action using structured JSON output. Choose **Local model** for a loopback server or **Remote API (HTTPS)** for a trusted remote endpoint. The endpoint must accept requests without an `Authorization` header.
 
-The command request contains your text, up to 100 elements with labels and screen positions, the active window title, the current focus, and up to four recent command records. If **Recognize on-screen text and icons** is enabled and capture succeeds, Mira also sends an image of the visible part of the current window. Turn that setting off to use text-only requests. Audio stays on your PC.
+The command request contains your text, up to 100 elements with labels and screen positions, the title of the desktop map's main window, the current focus, and up to four recent command records. If **Recognize on-screen text and icons** is enabled and capture succeeds, Mira also sends an image of the visible part of the current window. Turn that setting off to use text-only requests. Audio stays on your PC.
 
-Optional local target reranking and screen recognition use separately provisioned runtimes and weights. Their pinned upstream assets are listed in the [reranker manifest](../context_operator/foundations/ranking/model.json) and [screen recognition manifest](../context_operator/foundations/perception/perception-models.json). Windows accessibility controls and short commands work with both options off.
+Local target reranking and screen recognition are off by default. Each needs its own Python runtime and weights, and this repository has no setup guide for them. The pinned upstream assets are listed in the [reranker manifest](../context_operator/foundations/ranking/model.json) and [screen recognition manifest](../context_operator/foundations/perception/perception-models.json). Windows accessibility controls and short commands work without them.

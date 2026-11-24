@@ -11,8 +11,21 @@
   screenshots and the overlay demo.
 - Give the iPhone companion the same icon. The iPhone companion is at 0.3.5.
 - Keep the iPhone Wi-Fi port usable after the app returns from the background.
-  A port that fails to open is retried for up to 30 seconds. The iPhone
-  companion is at 0.3.4.
+  A port that fails to open is retried up to 30 times, one second apart. The
+  iPhone companion is at 0.3.4.
+- Remove the RGB face-image mode from the iPhone companion. It now sends
+  numeric measurements only and no longer claims that the PC follows your
+  gaze as soon as something connects. The iPhone companion is at 0.3.6.
+- Show errors that used to be hidden: screen recognition and the game gaze
+  feed failing to start, a screen map that cannot be read, a failed iPhone
+  search, and a command model that cannot be reached. A skipped click now
+  gives its actual reason.
+- Screen recognition and local reranking are off by default. Both need
+  separately installed runtimes. Saved settings keep their values.
+- **Ctrl+Alt+F12** also stops iPhone gaze setup. The setup ring fills only
+  when the fixation is ready to confirm.
+- Saving a webcam profile no longer replaces the previous one when its backup
+  cannot be written.
 
 ## 1.3.1
 

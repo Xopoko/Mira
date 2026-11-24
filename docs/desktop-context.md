@@ -11,7 +11,7 @@ Three independent COM MTA workers read UI Automation properties in batches with
 `FindAllBuildCache`. Query scheduling favors windows near the point of
 attention. Each window keeps its own observation time and identity. A result
 expires after 1.25 seconds and is discarded if its process or bounds have
-changed. The lifetime is independent for each window.
+changed.
 Covered fragments are clipped out. The center of an element must be visible
 before it can be used for a click.
 
@@ -23,9 +23,11 @@ reading other windows.
 ## Optional visual recognition
 
 When configured, visual recognition supplements the map in visible window
-regions. Before taking a crop, Mira checks the window identity, geometry,
-occlusion and capture eligibility. Password fields and protected windows are
-excluded, and an unsuccessful password check blocks new captures.
+regions. Before taking a crop, Mira checks the window identity, geometry and
+occlusion. It skips windows whose titles match its protected-window list. It
+also blocks captures of a window when the UI Automation scan reports a visible
+password field there or cannot complete that check. This relies on what the
+application reports to UI Automation.
 
 Recognized objects can be reused while their source pixels and a small padding
 region still match. The in-memory cache stores hashes and recognition results.

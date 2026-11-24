@@ -1,17 +1,15 @@
 # Webcam fallback
 
-Mira can use a calibrated webcam when the iPhone temporarily loses gaze. The
-iPhone remains the primary source while it provides a fresh supported
-estimate. The webcam needs at least three distinct supported frames spanning
-at least 120 ms to take over. Observations aged 200 ms or more are rejected. Mira
-switches back when the iPhone recovers.
+Mira can use a calibrated webcam when the iPhone temporarily loses gaze. A
+fresh iPhone estimate always takes priority. The webcam needs at least three
+distinct supported frames spanning at least 120 ms to take over. Observations
+aged 200 ms or more are rejected. Mira switches back when the iPhone recovers.
 
 ## Runtime
 
-Use an isolated Python environment with NumPy and MediaPipe, and obtain a
-compatible Face Landmarker `.task` model. Set the interpreter and model paths
-before launching Mira. This example assumes the environments and model are in
-the specified locations.
+Use a separate Python environment with NumPy and MediaPipe, and obtain a
+Face Landmarker `.task` model. Set the interpreter and model paths before
+launching Mira.
 
 ```powershell
 $env:MIRA_WEBCAM_PYTHON = "$PWD\.local\webcam-venv\Scripts\python.exe"
@@ -20,8 +18,8 @@ $env:MIRA_ENABLE_STANDALONE_MODELS = '1'
 .\.venv\Scripts\python.exe launch.pyw
 ```
 
-An available LocalModels installation controls permission to start inference.
-The standalone setting applies when LocalModels is absent. See the
+`MIRA_ENABLE_STANDALONE_MODELS` is explained in
+[Voice and models](models.md#local-model-access). See the
 [MediaPipe Face Landmarker guide](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker/python)
 for the Python runtime and model.
 
@@ -29,11 +27,13 @@ for the Python runtime and model.
 
 1. Under **Settings → Advanced → Webcam · second angle**, select **Find
    cameras**, choose the camera and select **Set up webcam**.
-2. Check the preview and start the guided task. Look at the center of each
-   ring until it moves. Setup learns from nine targets and checks five new
-   targets. Use **Space** to pause or **Check camera** to review the preview.
-3. After accepting the profile, choose **Connect webcam** in Settings.
-   Connect the iPhone separately in **Overview**.
+2. In the setup window, select **Connect webcam**, check the preview and
+   select **Start setup**. Look at the center of each ring until it moves.
+   Setup learns from nine targets and checks five new targets. Use **Space**
+   to pause or **Check camera** to review the preview.
+3. Select **Use webcam profile** if offered. To start the fallback, choose
+   **Connect webcam** in Settings. Connect the iPhone separately in
+   **Overview**.
 
 Set up again after moving the webcam, changing monitor geometry or changing
 your viewing position. A failed attempt preserves the previous accepted
@@ -52,9 +52,10 @@ stale samples are discarded.
 Mira fits the webcam mapping from the nine training targets and selects its
 model using held-out training targets. The five check targets are reserved for
 evaluating the selected model. The saved profile is tied to the camera ID and
-display bounds. The accepted profile and its previous backup are stored in
-`.local/webcam-profile.json` and `.local/webcam-profile.bak.json`. The recent
-attempts in `.local/webcam-attempts/` contain numeric observations and results.
+display bounds. The accepted profile, its previous backup and recent attempts
+are stored as `webcam-profile.json`, `webcam-profile.bak.json` and
+`webcam-attempts/` in [Mira's data directory](development.md#local-data). The
+attempts contain numeric observations and results.
 
 Run the webcam unit tests from the repository root.
 

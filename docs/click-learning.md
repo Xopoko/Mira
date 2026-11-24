@@ -1,9 +1,9 @@
 # Refine gaze using clicks
 
-To enable click learning, connect a calibrated iPhone in TrueDepth mode and
-select **Profile → Click learning → Refine gaze using clicks**. A compatible
-earlier calibration can also be used. Open **Details** to see how many clicks
-were accepted and why others were skipped.
+Click learning is on by default and works while an iPhone with a gaze setup
+is connected. **Profile → Click learning → Refine gaze using clicks** turns it
+off. **Details** shows how many clicks were used, how many were skipped and
+the latest status.
 
 A physical left click can refine gaze when at least three distinct measurements
 in the preceding 450 ms form a stable fixation supported by the profile. Mira
@@ -13,14 +13,16 @@ source radius, 45% of the shorter screen dimension and 650 physical pixels.
 Blinking or missing frames break the fixation history. Drags, synthetic input
 and clicks in Mira's own windows are excluded.
 
-A single eligible click can update a local correction by up to 40 pixels scaled
-by its weight. Conflicting updates in the same area are rejected. The wider
-regression requires three consistent observations under similar viewing
-conditions before adding a training example. A candidate regression needs 12
-additional accepted clicks across at least three screen areas before it can
-replace the current predictor. Its median error must fall by more than 6%, and
-its 90th-percentile error can rise by at most 3%. For a large offset, run gaze
-setup again.
+A single eligible click moves a local correction by at most 40 pixels scaled
+by the click's weight. A click that contradicts the existing correction for a
+similar head and eye position is rejected. Once a local correction has three
+agreeing clicks, further clicks there with a weight of at least 0.5 also become
+training examples for a wider model. Mira trains that model after 48 examples
+covering at least six screen areas and first checks it on held-out areas. The
+model then has to predict 12 new qualifying clicks across at least three
+areas, at most four per area. In both checks its median error must be more
+than 6% lower than the current predictor's, and its 90th-percentile error at
+most 3% higher. For a large offset, run gaze setup again.
 
 Corrections and numeric examples are stored locally and tied to the profile.
 **Undo last correction** restores the previous learning state during the

@@ -10,8 +10,8 @@ Keep user-facing text and documentation in English.
   Background subprocesses on Windows use `CREATE_NO_WINDOW`.
 - Keep local data, device pairing files, downloaded weights, and screen or audio captures
   out of Git and out of automatic capture logs.
-- Keep training and check targets separate. A short setup can intentionally have
-  `usable=True` and `passed=False`. Read accepted profiles through `ProfileStore`
-  and preserve the model, its report, and the backup pair.
+- Keep training and check targets separate. Gaze setup reports `usable=True`
+  while `passed` stays `False` by design. Read accepted profiles through
+  `ProfileStore` and preserve the model, its report, and the backup pair.
 - Run `.venv/Scripts/python.exe -m unittest discover -s tests` for desktop changes.
   Use targeted UI checks as well when layout or interaction changes.

@@ -1,170 +1,138 @@
 # Architecture
 
 ```text
-TrueDepth eyes + head + 3D origins
-             ↓ timestamped numeric observations
-personal setup → training → disjoint held-out check → accepted profile
-             ↓                        ↓
-personal gaze + search radius    local numerical receipt
-             ↓
-conservative click residuals + optional personal regression update
-             ↓
-estimated screen point → nearby visible controls → Qt gaze contours
-                                          ↓
-                          optional voice, typing or dwell
-                                          ↓
-                           fresh-target validation → Windows output
+iPhone TrueDepth: eye and head measurements (numbers, timestamped)
+        │  pulled by the PC over Wi-Fi or USB
+        ▼
+gaze setup: 9 training targets → model → 5 separate check targets → accepted profile
+        │
+        ▼
+estimated screen point and search radius  ←  optional corrections learned from clicks
+        │
+        ▼
+visible controls near the point → highlight overlay
+        │  optional: voice or typed command, dwell
+        ▼
+target checked again → Windows input
 ```
 
-## Source, coordinates and lifecycle
+## Code layout
 
-The optional webcam path has independent capture, calibration and validation
-([webcam.md](webcam.md)). `core/webcam.py` keeps a fresh supported iPhone
-prediction authoritative and admits a calibrated webcam fallback only after
-distinct fresh observations. It never averages uncalibrated angles or feeds
-webcam predictions into the iPhone learner. A missing sample clears the live
-gaze point. Switching the active camera or explicitly disconnecting it revokes
-the saved voice target, dwell and pending decisions. Qt selects the camera ID
-and captures RGB frames in memory. A hidden isolated MediaPipe child returns
-numeric observations.
-Pause stops both paths; startup never opens the webcam automatically.
+| Path | Role |
+| --- | --- |
+| `core/` | Decisions without I/O: data contracts, focus selection, gaze-source arbitration, click matching, next-target prediction, command parsing, desktop map composition. Imports no Qt, network or hardware. |
+| `foundations/` | The phone reader, gaze smoothing, and the child-process runtimes for speech, target reranking and screen recognition. |
+| `personalization/` | Gaze setup, the profile model and its store, webcam calibration. |
+| `providers/` | Adapters that own hardware, COM and model processes. |
+| `ui/` | Qt windows and the overlay. |
+| `controller.py` | One `Controller` connects the providers and runs a 25 ms tick. |
 
-`core` imports no Qt, network or hardware. Its immutable contracts carry physical
-virtual-desktop pixels, including negative monitor origins. Providers own hardware,
-COM and models; Qt owns presentation. Input timestamps use host `time.monotonic()`.
-The phone adapter conservatively combines phone-reported age and the full request
-round trip. Duplicate, old or invalid observations cannot become current evidence.
+## Coordinates, time and staleness
 
-`Controller.attention` is the point used to select an element. It comes from
-the active gaze source or the mouse during an explicit override.
+All coordinates are physical pixels on the Windows virtual desktop, whose
+origin can be negative. Timestamps use host `time.monotonic()`. For a phone
+frame the reader subtracts the age reported by the phone and the full request
+round trip, so the estimate errs towards older.
 
-The controller independently owns screen, vision, voice, action and phone work.
-Pausing increments generations and action epochs before worker shutdown, closes
-the setup and revokes pending sources. It cannot retract a
-native action already dispatched; such an outcome remains visible and blocks
-overlapping output. Background child processes use `CREATE_NO_WINDOW`.
+Nothing is used past its age limit. A gaze sample lasts 200 ms, a window's
+element map 1.25 s and a scene 3 s. Duplicate, out-of-order and invalid frames
+do not count as new data, and a missing sample clears the live gaze point.
 
-## One personal setup
+`Controller.attention` is the point used to select an element. It is the
+active gaze source, or the mouse pointer while **Test with mouse** is on or
+Shift is held.
 
-`personalization/session.py` builds a short starter from nine labeled fixations and
-checks it on five different screen targets during one comfortable, stationary pose.
-The target sets are disjoint. Each sample contains the existing numeric ARKit eye,
-head and 3D eye-origin fields; it needs no RGB frame or previous screen predictor.
-After a stable fixation, Space confirms the displayed target. Missing, stale or
-duplicate observations do not advance collection.
+Pausing raises the controller's generation and action epoch before it stops
+the workers, so results that arrive late from the previous run are dropped. It
+also closes gaze setup and forgets the focus and any voice command in
+progress. A Windows action that was already dispatched cannot be retracted.
+Its outcome is still reported, and no other action starts until it returns.
+Child processes are started with `CREATE_NO_WINDOW`.
 
-The starter averages the intersections of each eye ray with the camera's
-`z=0` plane. An affine transform maps that average to physical desktop pixels.
-The five held-out targets measure median and P90 error, jitter and coverage. A
-usable starter can be adopted for gradual refinement. Its `passed` status stays
-false: the short check does not establish the former full three-pose accuracy
-contract. Completing collection alone never means that usability passed.
-The starter's versioned `joint_training_poses_v2` support guard compares each
-observation with recorded training neighborhoods: head translation, head rotation,
-and eye direction must agree with the same training anchor. Tolerances remain
-fixed and are not estimated from the check targets. This allows head turns already
-present during training, instead of rejecting them against one median head pose.
-Legacy saved models retain their original support policy. Per-target diagnostics
-separate unsupported observations from predictions outside the display; these
-are independent of prediction error and jitter.
-The measurement is in pixels and cannot be called angular accuracy without verified
-screen dimensions and eye-to-screen extrinsics.
+## Gaze setup and the profile
 
-`personalization/store.py` commits the accepted profile and its receipt together,
-retaining the prior accepted profile for rollback. Profile identity includes the
-display and engine geometry. Older accepted profiles remain readable; old numerical
-setup archives remain available for recovery and are not mixed into the new
-geometry. Persistent measurements use numeric formats without pickle. One setup
-entry point is shared by Overview and Profile.
+`personalization/session.py` collects nine labeled fixations for training and
+five at other screen positions for checking, all in one seated position. A
+sample is 22 numbers from ARKit: eye directions, head pose and 3D eye origins.
+It needs no camera image. A target counts after a steady fixation of at least
+12 fresh frames over 0.65 s, confirmed with Space. Stale, duplicate and blink
+frames do not advance collection.
 
-## Adaptation and inference
+The model in `personalization/model.py` intersects each eye ray with the
+camera's `z=0` plane, averages the two intersections and maps the result to
+desktop pixels with an affine transform. The five check targets, which the fit
+never sees, give the median and 90th-percentile error, jitter and coverage. A
+setup within the limits is `usable` and can be adopted. `passed` stays false
+for every setup: five points show that it is usable, not that it is accurate.
+The errors are in pixels. They say nothing about angular accuracy, which would
+need the physical size and position of the screen.
 
-`core/click_learning.py` matches a manual click to distinct supported observations
-from the 450 ms before press, requires a stable fixation, and rejects missing-eye
-barriers, opposite movement and clicks beyond the combined source-radius, screen-size
-and 650 px limits. This is weak behavioral evidence, not gaze ground truth.
-`providers/learning.py` applies only a bounded local correction per accepted click;
-the global regressor receives a row only after three agreeing observations in a
-similar eye/head feature neighborhood. A cross-validation winner remains pending
-until 12 future corroborated clicks across at least three screen cells.
-Promotion requires at least 6% lower median error and P90 no more than 3% above the
-baseline. On load, older unguarded physical-click rows and networks trained from
-them are set aside in a backup. Previously saved manual pose data is still loaded.
+While tracking, an observation is supported only if its head position, head
+rotation and eye direction all agree with the same training fixation, within
+fixed tolerances. Otherwise Mira shows no gaze point and reports that the
+position is outside the setup range.
 
-`core/fusion.py` uses gaze position and recent focus to choose among visible
-elements. For a spoken request it can shortlist candidates by position and label.
-With reranking enabled, the first complex command with a fresh scene starts
-the CPU reranker in the background.
-The interpreter can handle that command immediately and uses reranker scores
-on subsequent requests once the model is ready. Pausing the application or
-disabling the reranker closes its process.
-Qt renders the current gaze point and radial light over the exposed elements; fresh
-action focus receives its own contour. Stale observations and targets are omitted.
-Native geometry caches store drawn shapes, not screen captures.
+`personalization/store.py` saves the accepted model and its report as a pair
+and keeps the previous pair as a backup. It reads back what it wrote and
+restores the old pair if anything fails. The report records the model's hash
+and the display bounds, and a profile is not loaded on a different display
+layout. The files hold numeric arrays and JSON, never pickle.
 
-`highlight_mode` selects the default radial presentation or opt-in magnetic focus.
-Magnetic selection remains inside `Fusion`: the displayed yellow element is the
-actual `Focus.target`, including for voice commands. Its separate hysteresis
-retains a full element identity and the acquisition gaze point. A directional
-shift of 18–60 physical pixels (scaled from source radius) must persist across
-distinct gaze timestamps for 180 ms; a strong spatial advantage switches sooner.
-Naming a target selects that exact element for three seconds, even without gaze.
-Cycling selects a neighbour while gaze remains fresh. Removed or changed
-elements and stale sources cannot retain a magnetic lock. Neither the lock nor
-its displayed center is fed back into gaze measurements or click labels.
+## Corrections, focus and the overlay
 
-Qt draws only that complete element, with a blue outer glow and yellow contour;
-the raw gaze dot, radial field and violet forecast are hidden in this mode.
-Switches brighten the new contour briefly without interpolating a shape across
-the desktop. Once settled, the layer repaints only for changed scene geometry or
-source expiry. Both old and new damage regions are erased, including on mode
-switch, pause or source loss. The original mode and its settings remain available.
+[Click learning](click-learning.md) nudges the estimate using manual clicks.
+[Next-target prediction](anticipation.md) ranks likely targets from mouse
+motion and gaze dwell. It only draws a preview and never becomes a gaze label.
 
-`quiet_mode` is an independent persisted presentation preference. `Window.refresh`
-passes a disabled presentation to every overlay, reusing the existing stale-ink
-cleanup for both radial and magnetic modes. The overview focus panel is hidden,
-and `SceneCanvas` independently skips gaze drawing. The main window remains usable.
-This does not pause the controller, clear action focus, change highlight selection,
-stop click learning or disable the opt-in game gaze publisher. Explicit profile
-setup still presents its targets; quiet mode does not hide an initiated task.
+`core/fusion.py` chooses the focus among visible elements from gaze distance,
+element size and, for a spoken or typed request, how well the label matches. A
+new best candidate has to hold for the stability time, 110 ms by default,
+before it replaces the current one. When a spoken command starts, the
+controller saves the focus and gaze of that moment and applies the transcript
+to that snapshot, so looking away during recognition does not redirect the
+command.
 
-`core/anticipation.py` and `providers/anticipation.py` own two distinct predictors:
-one ranks targets from mouse motion, the other from stable supported gaze dwell.
-Each has its own ranker and weights; the mouse ranker can additionally use fresh,
-supported gaze proximity as a feature. Manual click outcomes can train intent
-ranking, but a click does not become a gaze coordinate label. The gaze channel only
-learns clicks near the recorded fixation; the mouse channel can learn a mapped click
-away from gaze. Predictions are captured before the outcome and remain
-presentation-only. Both channels evaluate predictions made at least 150 ms
-before the click. Mouse statistics also require the pointer to be outside the
-clicked element at prediction time when that element can be identified.
-Gaze statistics include disagreements with clicks too far away to train on.
+`highlight_mode` selects how the focus is shown.
 
-## Scene, commands and output
+- **Follow gaze**, the default, draws the gaze dot and a radial light over
+  nearby elements. The action target has its own contour.
+- **Magnetic focus** outlines only the focused element. The element keeps the
+  focus until gaze moves 18–60 physical pixels, scaled from the search radius,
+  towards another element and stays there for 180 ms across distinct frames.
+  A clearly better candidate switches sooner. A removed or changed element, or
+  a stale source, drops the lock. The lock is never fed back into gaze
+  measurements or click labels.
 
-`providers/desktop.py` composes independently aged WindowMaps from bounded COM-owned
-UIA readers. `core/desktop.py` computes exposed rectangles and removes moved,
-replaced or stale maps. Screen topology is refreshed separately from slow queries.
-`providers/visual_cache.py` permits bounded OCR/model inference with independent
-pixel verification. A changed screenshot, scene or action epoch rejects late output.
-See [desktop-context.md](desktop-context.md).
+`quiet_mode` hides the overlay and the focus panel in **Overview**. It does
+not pause tracking, click learning or the [game gaze feed](game-gaze.md), and
+gaze setup still shows its targets. See
+[Overlay rendering](overlay-performance.md) for how the overlay is painted and
+erased.
 
-Short commands use direct parsing or the small local classifier. For other
-commands, the configured model is asked for a JSON action and the client validates
-its reply. [Local inference settings](models.md) control access to local models.
-The controller saves the current focus and gaze when it receives the speech-start
-event. The transcript uses that snapshot, so moving the gaze during recognition
-cannot redirect a short command to the new focus.
+## Webcam fallback
 
-Before action, output checks the fresh element identity, process, geometry,
-ownership and visual digest where applicable. Semantic UIA runs on its own worker;
-an error after dispatch does not trigger a coordinate fallback or retry. Gaze alone
-activates a control only when the user enables dwell.
-SendInput reports how many events Windows accepted. A successful UIA call reports
-that the provider returned without an error. The application refreshes the scene
-after dispatch.
+A calibrated webcam can supply gaze while the iPhone has none. A fresh iPhone
+estimate always wins, and the two are never averaged. Switching the active
+source cancels the saved voice target, dwell and pending decisions. See
+[Webcam fallback](webcam.md).
 
-`Controller.register_source(name, source)` accepts adapters with `start(emit)`
-and `stop()` methods. Programmatic sources can supply gaze, text commands or
-a stop event. The controller rejects
-events from earlier generations after a source stops or restarts.
+## Desktop map, commands and output
+
+`providers/desktop.py` builds the scene from per-window UI Automation scans,
+optionally supplemented by screen recognition. See
+[Desktop map](desktop-context.md).
+
+A command is first parsed directly in `core/commands.py`, then tried by the
+small local classifier in `providers/fast_intent.py`, and only then sent to
+the configured model. The model must answer with one JSON action, which the
+client validates. See [Voice and models](models.md).
+
+Before acting, `providers/windows.py` checks that the scene and the window's
+map are still fresh, that the window has the same process and bounds, that
+the target is still in the scene, and that nothing covers it. For synthetic
+input it also re-reads the control under the target point, and for a
+recognized element it compares the pixels. Mira prefers a UI Automation call
+and uses synthetic mouse and keyboard input when the control offers none. Once
+either has been sent there is no retry and no fallback, and a short
+`SendInput` count is reported as an error. The scene is discarded and rebuilt
+after every action. Gaze alone activates a control only when dwell is enabled.

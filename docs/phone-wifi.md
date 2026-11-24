@@ -1,52 +1,48 @@
 # Connect an iPhone over Wi-Fi
 
-Mira on iPhone uses TrueDepth to send eye and head measurements to the Windows
-app. First [build and install the iPhone companion](../phone/README.md) on a
-TrueDepth iPhone running iOS 17 or later.
+The [README](../README.md#try-gaze-tracking) walks through the first run.
+This guide covers the connection itself. First
+[build and install the iPhone companion](../phone/README.md).
 
-## Connect and set up
+## Connect
 
 1. Put the iPhone and PC on the same trusted local network. The PC can use
    Ethernet. Guest networks may block connections between devices.
 2. Open Mira on iPhone, select **Wi-Fi** in the top-right menu and tap
    **Start Tracking**. Grant camera and local network access if prompted.
-3. On the PC, open **Overview → Get started** and select **Find iPhone**.
-   Then select **Set up** and complete the gaze check.
-4. In **Overview**, select **Connect iPhone**, then **Open Practice** to see
-   the gaze contours on Windows.
+3. On the PC, select **Find iPhone** in **Overview → Get started** or in
+   **Settings → iPhone**.
 
-Wi-Fi is selected on a fresh install. If the PC is set to USB, open
-**Settings → iPhone**, select **Wi-Fi · home network** and choose
-**Save connection**. If discovery fails, enter the private IPv4 address shown
-on the phone in the same panel and select **Save connection**.
-
-To repeat the gaze check, use **Profile → Refine setup · about a minute**.
-**Details** shows the last accepted profile. A failed attempt preserves it.
+**Find iPhone** probes the 254 neighbouring addresses of each private IPv4
+address the PC has. If the phone is elsewhere on a larger network, or discovery
+fails, enter the address shown on the phone in **Settings → iPhone** and
+select **Save connection**. If the PC is set to USB, select **Wi-Fi · home
+network** in the same panel first.
 
 ## While tracking
 
-Keep Mira in the foreground. After about 20 seconds without a touch, Mira dims
+Keep Mira in the foreground. After about 20 seconds without a tap, Mira dims
 the display. Tap the dimmed screen to restore brightness. Locking the phone,
 putting the app in the background or selecting **Stop** ends tracking. When
-you return, tap **Start Tracking**. If the Wi-Fi port is briefly unavailable,
-Mira retries for up to 30 seconds before it shows the reason.
+you return, tap **Start Tracking**. If the Wi-Fi port fails to open, Mira
+retries up to 30 times, one second apart, before it shows the reason.
 
-Wi-Fi sends numeric eye and head measurements, tracking status and frame
+The phone sends numeric eye and head measurements, tracking status and frame
 timing. This TCP connection has no authentication or encryption. Use it only
-on a local network you trust. A device on that network may be able to request
-the stream while tracking is active.
+on a local network you trust. A device on that network can request the stream
+while tracking is active.
 
 ## Transport details
 
-The PC requests the latest numeric frame over TCP port `39472` with one request
-outstanding at a time. The phone keeps the latest frame in memory. The PC
-allows up to 400 ms for a complete response and rejects samples aged 200 ms or
-more. A duplicate frame keeps its original timestamp. USB and Wi-Fi are
-selected explicitly and use separate listeners.
+The PC requests the latest frame over TCP port `39472`, one request at a time.
+The phone keeps only the latest frame in memory and reports its age with each
+reply. The PC allows 400 ms for a complete response. It uses a frame only if
+the reported age is at most 150 ms and that age plus the full request round
+trip is under 200 ms. A repeated frame keeps its original timestamp. USB and
+Wi-Fi are selected explicitly and use separate listeners.
 
-The Windows status shows round-trip request time and a conservative estimate
-of frame age based on the age reported by the phone plus the full round trip.
-End-to-end gaze-to-highlight latency also includes capture, gaze processing,
+Hover over the iPhone status in **Overview** to see the round trip and the
+frame age. Gaze-to-highlight latency also includes capture, gaze processing,
 smoothing and Windows rendering.
 
 The Windows protocol tests use a local TCP fixture.

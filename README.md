@@ -22,7 +22,7 @@
 Mira is a gaze-tracking prototype. The iPhone uses ARKit to measure eye
 direction and head pose. After a personal calibration, the Windows app maps
 those measurements to screen coordinates and lights up nearby interface
-contours. The result is an estimate of which region has your attention.
+contours to show where it estimates you are looking.
 
 ![Mira’s Windows overlay lighting up different screen regions as the estimated gaze moves](docs/images/mira-gaze.gif)
 
@@ -47,13 +47,14 @@ Mira’s Windows overlay following simulated gaze samples.
 2. Put the iPhone and PC on the same trusted network. In the Windows app,
    open **Overview** and select **Find iPhone**. See the
    [Wi-Fi guide](docs/phone-wifi.md) for manual connection.
-3. Select **Set up**. Look at each of the nine training targets and five
-   check targets. Press **Space** when each ring fills, then select
-   **Use gaze setup** if offered.
-4. Select **Connect iPhone**, then **Open Practice**. In the default
-   **Follow gaze** mode, the dot and nearby contours move as you look around.
-   Choose **Return to desktop** to try the overlay in other apps.
-   **Ctrl+Alt+F12** pauses tracking.
+3. Select **Set up**. In the setup window, select **Connect iPhone**, then
+   **Start setup**. Look at each of the nine targets and press **Space** when
+   its ring fills. Select **Check on new points**, do the same for five more
+   targets, then select **Use gaze setup** if offered.
+4. Back in **Overview**, select **Connect iPhone**, then **Open Practice**.
+   In the default **Follow gaze** mode, the dot and nearby contours move as
+   you look around. Choose **Return to desktop** to try the overlay in other
+   apps. **Ctrl+Alt+F12** pauses tracking.
 
 Mira is most useful for broad areas such as panels and large controls.
 In **Profile → Details**, the setup check shows **Typical error** (median)
@@ -118,8 +119,9 @@ tests and [iPhone checks](phone/README.md#checks) for the Xcode build and tests.
 
 ## Privacy
 
-- Over Wi-Fi, the iPhone sends numeric eye and head measurements. Use a
-  trusted network because this stream has no authentication or encryption.
+- The iPhone sends numeric eye and head measurements, never images. Use a
+  trusted network because the Wi-Fi stream has no authentication or
+  encryption.
 - Calibration data and settings stay on the PC. Voice recognition runs
   locally. Screen and camera frames stay in memory during ordinary use.
 - If you enable **Remote API (HTTPS)**, complex commands and screen context

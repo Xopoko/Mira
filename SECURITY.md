@@ -1,16 +1,10 @@
 # Security policy
 
-## Supported versions
-
-Security fixes are made on the current release line. Check
-[Releases](https://github.com/Xopoko/Mira/releases) for the latest version.
-
-## Report a vulnerability
-
-Use GitHub's [private vulnerability form](https://github.com/Xopoko/Mira/security/advisories/new).
+Security fixes go into the latest
+[release](https://github.com/Xopoko/Mira/releases). To report a vulnerability,
+use GitHub's [private vulnerability form](https://github.com/Xopoko/Mira/security/advisories/new).
 Include the Mira version, affected platform or feature, what a user could
 experience, and the steps or a minimal example needed to investigate. Remove
 tokens, personal data and real calibration samples from attachments.
 
-Keep vulnerability details within the private report while we investigate
-and coordinate disclosure.
+Keep the details within the private report until a fix is available.
