@@ -1,6 +1,5 @@
 """Daily operator UI with one personal setup and no experimental model menus."""
 from collections import Counter
-import re
 import subprocess
 import threading
 import time
@@ -112,7 +111,6 @@ QWidget#canvas QLabel#stageMuted {color:#A6A6A0;}
 """
 
 GO_CONFIRMATION_SECONDS = 2.0
-PHONE_SETUP_REQUIRED = 'Set up your gaze in Profile first.'
 GUIDE_PHONE_HINT = 'Open Mira on iPhone, choose Wi‑Fi and tap Start Tracking. Mira finds it automatically.'
 
 CHEVRON = QByteArray(b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 8">'
@@ -129,83 +127,6 @@ def theme(extra=""):
         family = next((name for name in families if QFontDatabase.hasFamily(name)), families[-1])
         style = style.replace(token, family)
     return style.replace('CHECKMARK', (ASSETS / 'check.svg').as_posix())
-
-
-def report_problems(report):
-    """Translate diagnostics from earlier saved reports for display."""
-    # Keep the exact saved Russian phrases as Unicode escapes.
-    phrases = (
-        ('\u041e\u0431\u044b\u0447\u043d\u043e\u0435 '
-         '\u043f\u043e\u043b\u043e\u0436\u0435\u043d\u0438\u0435: '
-         '\u043e\u0448\u0438\u0431\u043a\u0430 ',
-         'Usual position · error '),
-        ('\u041d\u0435\u043c\u043d\u043e\u0433\u043e \u0431\u043b\u0438\u0436\u0435: '
-         '\u043e\u0448\u0438\u0431\u043a\u0430 ',
-         'Slightly closer · error '),
-        ('\u041d\u0435\u043c\u043d\u043e\u0433\u043e \u0434\u0430\u043b\u044c\u0448\u0435: '
-         '\u043e\u0448\u0438\u0431\u043a\u0430 ',
-         'Slightly farther away · error '),
-        (' px (\u043e\u0440\u0438\u0435\u043d\u0442\u0438\u0440 \u0434\u043e ',
-         ' px (target under '),
-        ('\u0411\u043e\u043b\u044c\u0448\u0430\u044f \u043e\u0448\u0438\u0431\u043a\u0430 '
-         '\u043d\u0430 ',
-         'High error at '),
-        (' \u043f\u0440\u043e\u0432\u0435\u0440\u043e\u0447\u043d\u044b\u0445 '
-         '\u0442\u043e\u0447\u0435\u043a.',
-         ' check points.'),
-        ('\u041d\u0435\u0443\u0441\u0442\u043e\u0439\u0447\u0438\u0432\u0430\u044f '
-         '\u0442\u043e\u0447\u043a\u0430: \u0434\u0440\u043e\u0436\u0430\u043d\u0438\u0435 ',
-         'Unsteady point · movement '),
-        ('\u0427\u0430\u0441\u0442\u044c \u043f\u043e\u043b\u043e\u0436\u0435\u043d\u0438\u0439 '
-         '\u0432\u044b\u0445\u043e\u0434\u0438\u0442 \u0437\u0430 '
-         '\u043e\u0431\u0443\u0447\u0435\u043d\u043d\u0443\u044e '
-         '\u043e\u0431\u043b\u0430\u0441\u0442\u044c \u0438\u043b\u0438 \u0437\u0430 '
-         '\u044d\u043a\u0440\u0430\u043d.',
-         'Some positions are outside the setup range or off the screen.'),
-        ('\u0422\u0438\u043f\u0438\u0447\u043d\u0430\u044f \u043e\u0448\u0438\u0431\u043a\u0430 ',
-         'Typical error '),
-        (' px — \u043d\u0443\u0436\u043d\u043e \u043d\u0435 \u0431\u043e\u043b\u0435\u0435 ',
-         ' px · limit '),
-        (' \u0442\u043e\u0447\u0435\u043a: P90 \u0432\u044b\u0448\u0435 ',
-         ' points · 90th percentile above '),
-        ('\u041d\u0435\u0443\u0441\u0442\u043e\u0439\u0447\u0438\u0432\u044b\u0439 '
-         '\u0432\u0437\u0433\u043b\u044f\u0434 \u043d\u0430 ',
-         'Unsteady gaze at '),
-        (' \u0442\u043e\u0447\u043a\u0430\u0445: '
-         '\u0434\u0440\u043e\u0436\u0430\u043d\u0438\u0435 \u0432\u044b\u0448\u0435 ',
-         ' points · movement above '),
-        (' \u0442\u043e\u0447\u0435\u043a \u043f\u043e\u043b\u043e\u0436\u0435\u043d\u0438\u0435'
-         ' \u0433\u043b\u0430\u0437 \u0438 \u0433\u043e\u043b\u043e\u0432\u044b '
-         '\u0432\u044b\u0445\u043e\u0434\u0438\u0442 \u0437\u0430 '
-         '\u0437\u0430\u043f\u0438\u0441\u0430\u043d\u043d\u0443\u044e '
-         '\u043e\u0431\u043b\u0430\u0441\u0442\u044c.',
-         ' points, eye and head position fell outside the setup range.'),
-        (' \u0442\u043e\u0447\u0435\u043a \u043e\u0446\u0435\u043d\u043a\u0430 '
-         '\u0432\u0437\u0433\u043b\u044f\u0434\u0430 \u0447\u0430\u0441\u0442\u043e '
-         '\u0432\u044b\u0445\u043e\u0434\u0438\u0442 \u0437\u0430 \u043a\u0440\u0430\u0439 '
-         '\u044d\u043a\u0440\u0430\u043d\u0430.',
-         ' points, gaze often fell outside the screen.'),
-        ('\u041d\u0430 \u043d\u0435\u043a\u043e\u0442\u043e\u0440\u044b\u0445 '
-         '\u0442\u043e\u0447\u043a\u0430\u0445 \u043c\u0435\u043d\u0435\u0435 80% '
-         '\u0438\u0437\u043c\u0435\u0440\u0435\u043d\u0438\u0439 '
-         '\u043e\u0434\u043d\u043e\u0432\u0440\u0435\u043c\u0435\u043d\u043d\u043e '
-         '\u043f\u043e\u0434\u0434\u0435\u0440\u0436\u0430\u043d\u044b '
-         '\u043f\u0440\u043e\u0444\u0438\u043b\u0435\u043c \u0438 '
-         '\u043d\u0430\u0445\u043e\u0434\u044f\u0442\u0441\u044f \u043d\u0430 '
-         '\u044d\u043a\u0440\u0430\u043d\u0435.',
-         'At some points, fewer than 80% of readings were both in the setup range and on the screen.'),
-        ('\u041d\u0430 ', 'At '),
-        (' \u0438\u0437 ', ' of '),
-    )
-    for reason in report.get('problems', []):
-        if not re.search(r'[\u0400-\u052f]', reason):
-            yield reason
-            continue
-        for previous, current in phrases:
-            reason = reason.replace(previous, current)
-        if re.search(r'[\u0400-\u052f]', reason):
-            reason = 'Run setup again to get updated details for this earlier check.'
-        yield reason
 
 
 class Lamp(QWidget):
@@ -599,7 +520,6 @@ class Window(QMainWindow):
         self.learning_value=label('','muted',True);details.addWidget(self.learning_value)
         self.click_summary=label('','muted',True);details.addWidget(self.click_summary)
         self.learning_model=label('','muted',True);details.addWidget(self.learning_model)
-        self.learning_migration=label('','muted',True);details.addWidget(self.learning_migration)
         box.addWidget(self.click_details);connect_disclosure(self.click_details_toggle,self.click_details)
         layout.addWidget(frame)
         frame,box=panel();row=QHBoxLayout();row.addWidget(label('Next target prediction','heading'),1)
@@ -847,7 +767,7 @@ class Window(QMainWindow):
         except (OSError,ValueError,RuntimeError) as exc:self.add_message('iPhone',str(exc))
 
     def activate_phone(self):
-        if self.c.phone_error == PHONE_SETUP_REQUIRED:
+        if self.c.phone_needs_setup:
             self.open_setup()
         else:
             self.c.toggle_phone()
@@ -1072,40 +992,33 @@ class Window(QMainWindow):
     def refresh_profile(self):
         bounds=self.c.win.bounds()
         stamps=[]
-        for name in ('personal-profile.json','gaze-personal.npz','personal-profile.bak.json','gaze-personal.bak.npz','personal-last-result.json','starter-last-result.json'):
+        for name in ('personal-profile.json','gaze-personal.npz','personal-profile.bak.json','gaze-personal.bak.npz','starter-last-result.json'):
             try:
                 st=(LOCAL/name).stat();stamps.append((st.st_mtime_ns,st.st_size))
             except OSError:stamps.append(None)
         stamp=(tuple(stamps),tuple(bounds.as_list()))
         if stamp!=self._profile_stamp:
-            from ..personalization import personal_status
+            from ..personalization import ProfileStore
             from ..personalization.history import latest_result
-            self._profile_status=personal_status(bounds);self._profile_stamp=stamp
+            self._profile_status=ProfileStore(LOCAL).status(bounds);self._profile_stamp=stamp
             self._profile_status['last_result']=latest_result(LOCAL,bounds)
         state=self._profile_status;available=state.get('available',False)
-        active=self.c.phone is not None and self.c.learning.key is not None
-        starter=(state.get('report') or {}).get('quality')=='starter'
-        self.profile_title.setText('Gaze setup ready' if available and starter else
-                                  'Your gaze profile is ready' if available else 'Using your earlier gaze setup' if active else
-                                  'Set up your gaze profile')
-        self.profile_detail.setText('Mira checked five new points in one seated position. Repeat setup if you change how you sit.' if available and starter else
-            'Mira checked this profile on new points. Clicks near your gaze can refine it.' if available else
-            'Mira can already learn from your clicks. Run the short setup if gaze lands far from where you look.' if active else
+        self.profile_title.setText('Gaze setup ready' if available else 'Set up your gaze profile')
+        self.profile_detail.setText('Mira checked five new points in one seated position. Repeat setup if you change how you sit.' if available else
             'Sit comfortably for 9 setup points and 5 new check points.')
-        self.profile_setup.setText('Refine setup · about a minute' if available or active else 'Set up · about a minute')
+        self.profile_setup.setText('Refine setup · about a minute' if available else 'Set up · about a minute')
         report=(state.get('report') if available else state.get('last_result')) or {}
         self.validation_panel.setVisible(bool(report))
         self.no_setup_results.setVisible(not report)
         if not report:
             return
-        good = report.get('passed') is True or report.get('usable') is True
+        good = report.get('usable') is True
         self.validation_verdict.setText('Accuracy: Good' if good else 'Accuracy: Fair · try setup again')
         for key,widget in self.metrics.items():
             value=report.get(key);widget.setText('—' if not isinstance(value,(int,float)) else f'{value*100:.0f}%' if key=='coverage' else f'{value:.0f} px')
-        source=('Saved setup · ' if available and starter else 'Saved profile · ' if available else
-                'Earlier full setup · ' if report.get('protocol')=='personal-arkit-direct-v1' else 'Latest attempt · ')
-        self.validation_hint.setText(source+('ready to refine with clicks.' if report.get('usable') and not report.get('passed') else 'check passed.' if report.get('passed') else
-                                     'needs refinement. '+' '.join(list(report_problems(report))[:2])))
+        source='Saved setup · ' if available else 'Latest attempt · '
+        self.validation_hint.setText(source+('ready to refine with clicks.' if good else
+                                     'needs refinement. '+' '.join(report.get('problems', [])[:2])))
 
     def finish_guide(self):
         self._guide_save_attempted=True
@@ -1172,7 +1085,7 @@ class Window(QMainWindow):
         if c.gaze_fps and c.gaze_source_mode != 'webcam':
             gaze_detail += f' · {c.gaze_fps:.0f} Hz'
         transport = self.settings['phone_transport']
-        needs_setup = c.phone_error == PHONE_SETUP_REQUIRED
+        needs_setup = c.phone_needs_setup
         self.gaze_value.setToolTip(gaze_detail)
         if c.webcam is not None:
             self.gaze_value.setToolTip(gaze_detail+'\n'+c.webcam_status)
@@ -1316,9 +1229,6 @@ class Window(QMainWindow):
         counts=c.click_counts
         self.click_summary.setText(f'This session · used {counts["accepted"]} of {counts["seen"]} · gaze elsewhere {counts["away"]} · too little data {counts["quality"]}')
         self.learning_model.setText(c.learning.model_status if c.learning.key is not None else 'Connect a working gaze profile to refine it.')
-        retired=progress.get('legacy_quarantined',0)
-        self.learning_migration.setVisible(bool(retired))
-        self.learning_migration.setText(f'Earlier unverified clicks ({retired}) are archived.' if retired else '')
         predictor=c.anticipation
         if not self.anticipation_check.isChecked():
             prediction_status='Prediction is off.'

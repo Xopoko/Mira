@@ -1,9 +1,5 @@
-import json
-import unittest,time,tempfile
-from pathlib import Path
-from unittest.mock import Mock
+import unittest,time
 from context_operator.providers.fast_intent import FastIntent
-from context_operator.providers.learning import GazeLearning
 from context_operator.core.contracts import *
 
 class FastTests(unittest.TestCase):
@@ -68,22 +64,5 @@ class FastTests(unittest.TestCase):
             self.gaze=gaze
             self.assertEqual(self.infer('click here').action,'clarify')
         self.assertEqual(self.infer('click here',allow_selected=True).action,'click')
-class LegacyLearningTests(unittest.TestCase):
-    def test_legacy_screen_anchor_survives_click_and_undo(self):
-        with tempfile.TemporaryDirectory() as folder:
-            path=Path(folder)/'learn.json';bounds=Rect(0,0,1000,700)
-            old=dict(version=1,profile='profile',display=bounds.as_list(),
-                     anchors=[[350,350,122.5,-98,1]],count=1)
-            path.write_text(json.dumps(old))
-            model=GazeLearning(path);model.bind('profile',bounds)
-            original=model.correct(Gaze(350,350,100))
-            self.assertGreater(original.x,350)
-            sample=GazeMeasurement(100,(0.,)*22,(350,350),True)
-            self.assertTrue(model.learn_click(sample,(400,350)))
-            model.undo_last()
-            restored=GazeLearning(path);restored.bind('profile',bounds)
-            self.assertEqual(restored.count,1)
-            self.assertEqual(restored.anchors,old['anchors'])
-            self.assertEqual(restored.correct(Gaze(350,350,100)),original)
 
 if __name__=='__main__':unittest.main()

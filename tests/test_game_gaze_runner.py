@@ -22,7 +22,6 @@ class FakePublisher:
 
 
 class FakePhone:
-    method = 'points'
     def __init__(self, events=None, *, gaze=None, measurement=None, error=None, worker=None):
         self.events = events if events is not None else []
         self.gaze = gaze
@@ -76,7 +75,8 @@ class GameGazeSessionTests(unittest.TestCase):
         self.assertEqual(session.tick(), 'Gaze live · receiving fresh data')
         self.assertEqual(phone.polls, 1)
         self.assertEqual(events[:4], ['phone.start', 'phone.poll', 'learning.correct', 'publish'])
-        self.assertEqual(publisher.calls[0][1]['profile_method'], 'points')
+        self.assertEqual(publisher.calls[0][0], (gaze, measurement, self.bounds, 20.0))
+        self.assertTrue(publisher.calls[0][1]['phone_present'])
         self.assertTrue(publisher.calls[0][1]['running'])
 
     def test_missing_tracking_is_distinct_from_active_and_stop_closes_in_safe_order(self):
@@ -96,19 +96,24 @@ class GameGazeSessionTests(unittest.TestCase):
         self.assertEqual(events[-2:], ['publisher.close', 'phone.stop'])
         self.assertEqual(phone.polls, 1)
 
-    def test_read_only_bind_does_not_create_legacy_migration_backup(self):
+    def test_bind_loads_saved_corrections_without_writing(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'learning.json'
             key = 'profile-test'
-            path.write_text(json.dumps({'version': 4, 'profile': key,
+            path.write_text(json.dumps({'version': 5, 'profile': key,
                                         'display': self.bounds.as_list(),
-                                        'anchors': [], 'pose_anchors': [],
-                                        'count': 0, 'click_anchors': []}), encoding='utf-8')
+                                        'count': 1, 'click_accepted': 1,
+                                        'click_anchors': [{'features': [0.] * 22, 'offset': [5., 0.],
+                                                           'target': [10., 20.], 'count': 1, 'revision': 1}]}),
+                            encoding='utf-8')
+            before = path.read_bytes()
             learning = GazeLearning(path)
-            learning.bind(key, self.bounds, read_only=True)
-            self.assertTrue(path.exists())
-            self.assertFalse(path.with_name('learning.before-safe-clicks.json').exists())
-            self.assertEqual(json.loads(path.read_text(encoding='utf-8'))['version'], 4)
+            learning.bind(key, self.bounds)
+            self.assertEqual(learning.count, 1)
+            self.assertEqual(learning.click_accepted, 1)
+            self.assertEqual(len(learning.click_anchors), 1)
+            self.assertEqual(path.read_bytes(), before)
+            self.assertEqual(list(Path(folder).iterdir()), [path])
 
 
 if __name__ == '__main__':

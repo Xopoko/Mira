@@ -7,9 +7,9 @@ from types import SimpleNamespace
 import numpy as np
 
 from context_operator.core.contracts import Rect
-from context_operator.foundations.gaze.profile import Profile
-from context_operator.personalization import (ProfileStore, STARTER_PROTOCOL,
-                                              PersonalSession, StarterSession)
+from context_operator.personalization import StarterSession
+from context_operator.personalization.session import STARTER_PROTOCOL
+from context_operator.providers.gaze import learning_path
 from context_operator.personalization.model import StarterProfile
 from context_operator.personalization.history import preserve_attempt
 
@@ -42,7 +42,7 @@ def burst_for(target, *, bounds=BOUNDS):
     return burst
 
 
-def starter_profile(bounds=BOUNDS):
+def starter_profile(bounds=BOUNDS, *, offset=0):
     training_targets = np.asarray([
         [(bounds.x+bounds.w*x), (bounds.y+bounds.h*y)]
         for x, y in StarterSession.train_targets
@@ -50,7 +50,7 @@ def starter_profile(bounds=BOUNDS):
     bursts = [burst_for(target, bounds=bounds) for target in training_targets]
     metadata = {'display': bounds.as_list(), 'engine': 'arkit-truedepth-v1',
                 'features': 22, 'protocol': STARTER_PROTOCOL}
-    return StarterProfile.fit(bursts, training_targets, metadata)
+    return StarterProfile.fit(bursts, training_targets + [offset, 0], metadata)
 
 
 class UncertainCandidate:
@@ -58,8 +58,8 @@ class UncertainCandidate:
         x = np.asarray(features)
         return x[..., :2]
 
-    def supports(self, features):
-        return float(np.asarray(features)[0]) != -100.
+    def support_reason(self, features):
+        return 'eye_direction' if float(np.asarray(features)[0]) == -100. else ''
 
 
 class StarterTests(unittest.TestCase):
@@ -75,19 +75,16 @@ class StarterTests(unittest.TestCase):
         metadata={'display':BOUNDS.as_list(),'engine':'arkit-truedepth-v1','features':22,'protocol':STARTER_PROTOCOL}
         return StarterProfile.fit(bursts,targets,metadata)
 
-    def test_training_head_turns_are_supported_without_changing_predictions(self):
+    def test_training_head_turns_are_supported_after_reload(self):
         profile=self.turning_head_profile()
         self.assertTrue(all(profile.supports(row) for row in profile.training_x))
-        old_settings=dict(profile.settings);old_settings.pop('support_policy')
-        legacy=StarterProfile(profile.arrays,profile.metadata,old_settings)
-        self.assertLess(sum(legacy.supports(row) for row in legacy.training_x),9)
-        np.testing.assert_array_equal(profile.predict(profile.training_x),legacy.predict(profile.training_x))
         extreme=profile.training_x[0].copy();extreme[7:13]=[0,0,0,1,-1,0]
         self.assertEqual(profile.support_reason(extreme),'head_rotation')
         with tempfile.TemporaryDirectory() as folder:
             path=Path(folder)/'profile.npz';profile.save(path)
             loaded=StarterProfile.load(path,profile.metadata)
             self.assertTrue(all(loaded.supports(row) for row in profile.training_x))
+            np.testing.assert_array_equal(profile.predict(profile.training_x), loaded.predict(profile.training_x))
 
     def test_separate_known_head_and_eye_positions_do_not_imply_known_combination(self):
         profile=self.turning_head_profile()
@@ -129,24 +126,25 @@ class StarterTests(unittest.TestCase):
         self.assertEqual(len(train), 9)
         self.assertEqual(len(check), 5)
         self.assertFalse(train & check)
-        self.assertEqual(StarterSession.posture_count, 1)
 
-    def test_old_full_session_archive_cannot_be_resumed_as_starter(self):
+    def test_setup_archive_with_wrong_protocol_fails_closed(self):
         with tempfile.TemporaryDirectory() as folder:
             archive = Path(folder)/'session.json'
-            PersonalSession(BOUNDS, archive)._save()
+            archive.write_text(json.dumps({'protocol': 'unknown', 'display': BOUNDS.as_list(),
+                                           'train': [], 'check': []}), encoding='utf-8')
             with self.assertRaises(ValueError):
                 StarterSession.resume(BOUNDS, archive)
 
     def test_short_capture_resumes_and_keeps_five_checks_independent(self):
         with tempfile.TemporaryDirectory() as folder:
             archive = Path(folder)/'starter.json'
-            session = StarterSession(BOUNDS, archive, require_confirmation=True)
+            session = StarterSession(BOUNDS, archive)
             seq = 0
             stamp = 100.
 
             def collect(target):
                 nonlocal seq, stamp
+                self.assertEqual(session.target, target)
                 feature = feature_for(target)
                 sample = None
                 advanced = False
@@ -166,7 +164,7 @@ class StarterTests(unittest.TestCase):
 
             for index, fraction in enumerate(session.train_targets):
                 if index == 3:
-                    resumed = StarterSession.resume(BOUNDS, archive, require_confirmation=True)
+                    resumed = StarterSession.resume(BOUNDS, archive)
                     self.assertEqual(resumed.index, 3)
                     session = resumed
                 collect([fraction[0]*BOUNDS.w, fraction[1]*BOUNDS.h])
@@ -186,14 +184,17 @@ class StarterTests(unittest.TestCase):
             session.persist_result()
             preserve_attempt(archive, report)
             self.assertTrue((Path(folder)/'starter-last-result.json').is_file())
-            self.assertFalse((Path(folder)/'personal-last-result.json').exists())
-            loaded = StarterSession.resume(BOUNDS, archive, require_confirmation=True)
+            self.assertNotIn('video', archive.read_text(encoding='utf-8'))
+            self.assertEqual(learning_path('abcdef1234567890-extra', folder).name,
+                             'gaze-adaptation-personal-abcdef1234567890.json')
+            loaded = StarterSession.resume(BOUNDS, archive)
             self.assertEqual(loaded.phase, 'result')
             self.assertIsNotNone(loaded.candidate)
+            np.testing.assert_array_equal(loaded.candidate.predict(np.zeros(22)), candidate.predict(np.zeros(22)))
 
             candidate_path = archive.parent/'starter-candidates'/f'{loaded.candidate_key}.npz'
             candidate_path.write_bytes(b'corrupt')
-            session = StarterSession.resume(BOUNDS, archive, require_confirmation=True)
+            session = StarterSession.resume(BOUNDS, archive)
             self.assertIsNone(session.candidate)
             self.assertTrue(session.report['usable'])
             session.phase = 'fit'
@@ -208,7 +209,7 @@ class StarterTests(unittest.TestCase):
                 collect([fraction[0]*BOUNDS.w, fraction[1]*BOUNDS.h])
             session.evaluate()
             session.persist_result()
-            loaded = StarterSession.resume(BOUNDS, archive, require_confirmation=True)
+            loaded = StarterSession.resume(BOUNDS, archive)
             self.assertTrue(loaded.report['usable'])
             self.assertIsNotNone(loaded.candidate)
             self.assertEqual(loaded.candidate_key, candidate_path.stem)
@@ -223,7 +224,7 @@ class StarterTests(unittest.TestCase):
             x[:, :2] = target
             if index == 3:
                 x[:, 0] = -100.
-            session.check.append({'phase': 'check', 'posture': 0, 'index': index,
+            session.check.append({'phase': 'check', 'index': index,
                                   'target': target, 'features': x.tolist(),
                                   'eye_origins': np.zeros((12, 2, 3)).tolist()})
         report = session.evaluate()
@@ -235,38 +236,6 @@ class StarterTests(unittest.TestCase):
         self.assertEqual(report['targets'][3]['onscreen_fraction'],0.)
         self.assertTrue(any('gaze often fell outside the screen' in reason for reason in report['problems']))
         self.assertTrue(any('eye and head position fell outside the setup range' in reason for reason in report['problems']))
-
-    def test_starter_adoption_keeps_previous_full_profile_in_rollback_pair(self):
-        with tempfile.TemporaryDirectory() as folder:
-            store = ProfileStore(folder)
-            x = np.zeros((12, 22))
-            x[:, 0] = np.linspace(-1, 1, 12)
-            x[:, 1] = np.linspace(1, -1, 12)
-            y = np.c_[x[:, 0]*400+900, x[:, 1]*250+500]
-            arrays = Profile._fit(x, y, ('linear', 10., 0.))
-            metadata = {'display': BOUNDS.as_list(), 'engine': 'arkit-truedepth-v1',
-                        'features': 22, 'protocol': 'personal-arkit-direct-v1'}
-            strict = Profile(arrays, metadata,
-                             {'version': 2, 'model': ['linear', 10., 0.], 'support_limit': 2.})
-            strict_report = {'passed': True, 'scope': 'same-session-independent-targets',
-                             'train_targets': 12, 'check_targets': 27,
-                             'median_px': 60., 'p90_px': 100., 'coverage': 1.}
-            store.adopt(strict, strict_report, BOUNDS)
-
-            starter = starter_profile()
-            starter_report = {'passed': False, 'usable': True, 'quality': 'starter',
-                              'scope': 'starter-independent-targets', 'train_targets': 9,
-                              'check_targets': 5, 'median_px': 30.,
-                              'p90_px': 60., 'jitter_px': 5., 'coverage': 1.}
-            store.adopt(starter, starter_report, BOUNDS)
-            status = store.status(BOUNDS)
-            self.assertTrue(status['available'])
-            self.assertEqual(status['quality'], 'starter')
-            previous, receipt = store._verified(store.profile_backup, store.receipt_backup,
-                                                 BOUNDS.as_list())
-            self.assertEqual(previous.metadata['protocol'], metadata['protocol'])
-            self.assertTrue(receipt['report']['passed'])
-
 
 if __name__ == '__main__':
     unittest.main()

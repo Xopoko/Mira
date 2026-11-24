@@ -48,14 +48,12 @@ class GameGazeSession:
             wrote = self.publisher.publish(
                 gaze, measurement, self.desktop, now,
                 phone_present=True,
-                profile_method=getattr(self.phone, 'method', None),
                 pointer_mode=False, mouse_control=False,
                 training=False, setup=False, running=True,
             )
             active = eligible_gaze(
                 gaze, measurement, self.desktop, now,
                 phone_present=True,
-                profile_method=getattr(self.phone, 'method', None),
                 running=True,
             )
             if active and wrote:
@@ -117,12 +115,9 @@ def create_saved_session():
 
     settings = load()
     desktop = Windows().bounds()
-    variant = settings.get('truedepth_profile', 'stable')
-    phone = PhoneGaze(desktop, variant, connection=PhoneConnection.from_settings(settings))
-    if phone.method == 'motion':
-        raise RuntimeError('Game gaze requires an eye tracking profile. Set up gaze first.')
-    learning = GazeLearning(learning_path(variant, phone.profile_key, LOCAL))
-    learning.bind(phone.profile_key, desktop, phone.feature_scale, read_only=True)
+    phone = PhoneGaze(desktop, connection=PhoneConnection.from_settings(settings))
+    learning = GazeLearning(learning_path(phone.profile_key, LOCAL))
+    learning.bind(phone.profile_key, desktop, phone.feature_scale)
     learning.trainer.set_seed(phone.profile)
     return GameGazeSession(phone, learning, desktop,
                            radius=settings.get('radius', 230))

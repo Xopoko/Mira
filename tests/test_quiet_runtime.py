@@ -106,7 +106,6 @@ class QuietRuntimeTests(unittest.TestCase):
         self.controller.learning = GazeLearning(Path(self.temp.name) / 'learning.json')
         self.controller.learning.bind('quiet-test-profile', Rect(0, 0, 1000, 700), np.ones(22))
         self.controller.phone = Mock()
-        self.controller.phone.method = 'points'
         self.controller.phone.invalid_captured = None
         self.controller.scene = None
 
@@ -151,7 +150,7 @@ class QuietRuntimeTests(unittest.TestCase):
         state.game_gaze_publisher = None
         state.game_gaze_unavailable = False
         state.module = type('Signals', (), {'emit': Mock()})()
-        state.phone = type('Phone', (), {'measurement': stale_sample, 'method': 'points'})()
+        state.phone = type('Phone', (), {'measurement': stale_sample})()
         state.gaze = Gaze(25, 12, 9.70, 230.0)
         state.pointer_mode = False
         state.mouse_control = False

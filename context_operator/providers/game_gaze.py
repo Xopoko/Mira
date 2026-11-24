@@ -21,7 +21,6 @@ MAGIC = b"COGAZE1\0"
 VERSION = 1
 FLAG_ACTIVE = 1
 MAX_AGE_S = 0.20
-SUPPORTED_METHODS = frozenset(("points", "pose", "spatial", "personal"))
 
 
 def _finite(value):
@@ -74,11 +73,10 @@ def pack_packet(sequence, captured_s, published_s, gaze_x=0.0, gaze_y=0.0,
 
 
 def eligible_gaze(gaze, measurement, desktop, now, *, phone_present,
-                  profile_method, pointer_mode=False, mouse_control=False,
+                  pointer_mode=False, mouse_control=False,
                   training=False, setup=False, running=True):
     """Return whether this frame is eligible for export from the real gaze source."""
-    if (not running or not phone_present or pointer_mode or mouse_control or training or setup
-            or profile_method not in SUPPORTED_METHODS):
+    if (not running or not phone_present or pointer_mode or mouse_control or training or setup):
         return False
     if not isinstance(gaze, Gaze) or not isinstance(measurement, GazeMeasurement):
         return False
@@ -186,11 +184,10 @@ class GameGazePublisher:
             self._kernel32.ReleaseMutex(self._lock)
 
     def publish(self, gaze, measurement, desktop, now, *, phone_present,
-                profile_method, pointer_mode=False, mouse_control=False,
+                pointer_mode=False, mouse_control=False,
                 training=False, setup=False, running=True):
         active = eligible_gaze(gaze, measurement, desktop, now,
                                phone_present=phone_present,
-                               profile_method=profile_method,
                                pointer_mode=pointer_mode,
                                mouse_control=mouse_control,
                                training=training, setup=setup, running=running)

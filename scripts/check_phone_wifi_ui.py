@@ -84,7 +84,7 @@ with patch('context_operator.settings.save') as save:
     w.use_wifi_button.click()
     assert c.settings['phone_transport']==w.phone_transport.currentData()=='wifi'
     assert save.call_count==2
-c.phone_error='Set up your gaze in Profile first.'
+c.phone_error='Set up your gaze first';c.phone_needs_setup=True
 w.last_paint=0;w.refresh()
 assert w.gaze_heading.text()=='Set up your gaze first' and w.gaze_btn.text()=='Set up'
 with patch.object(w,'open_setup') as setup:

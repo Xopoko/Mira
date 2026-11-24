@@ -12,9 +12,7 @@ class IntentLearning(IntentPredictor):
         try:
             if self.path.exists():
                 data=json.loads(self.path.read_text(encoding='utf-8'))
-                if data.get('schema')==1:
-                    self.model=OnlineRanker.restore(data)
-                elif data.get('schema')==2:
+                if isinstance(data,dict) and data.get('schema')==2:
                     self.model=OnlineRanker.restore(data['mouse']);self.gaze_model=GazeRanker.restore(data['gaze'])
                 else:raise ValueError('Unknown intention state')
         except (OSError,ValueError,TypeError,KeyError):

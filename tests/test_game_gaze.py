@@ -22,7 +22,7 @@ class GameGazePacketTests(unittest.TestCase):
     def test_packet_is_fixed_little_endian_contract_and_preserves_capture_time(self):
         gaze, measurement = self.gaze_pair()
         self.assertTrue(eligible_gaze(gaze, measurement, self.bounds, 10.05,
-                                      phone_present=True, profile_method="points"))
+                                      phone_present=True))
         packet = pack_packet(9, gaze.captured, 10.05, gaze.x, gaze.y,
                              self.bounds, gaze.radius, active=True)
         self.assertEqual(len(packet), PACKET_SIZE)
@@ -41,21 +41,20 @@ class GameGazePacketTests(unittest.TestCase):
 
     def test_rejects_stale_future_mismatched_unsupported_and_attention_data(self):
         cases = (
-            (self.gaze_pair(captured=9.8), 10.0, "points"),
-            (self.gaze_pair(captured=10.01), 10.0, "points"),
-            ((Gaze(-1919, 100, 10.0), GazeMeasurement(9.99, (0.0,) * 22, (-1919, 100), True)), 10.01, "points"),
-            (self.gaze_pair(supported=False), 10.01, "points"),
-            (self.gaze_pair(source="mouse"), 10.01, "points"),
-            (self.gaze_pair(), 10.01, "motion"),
+            (self.gaze_pair(captured=9.8), 10.0),
+            (self.gaze_pair(captured=10.01), 10.0),
+            ((Gaze(-1919, 100, 10.0), GazeMeasurement(9.99, (0.0,) * 22, (-1919, 100), True)), 10.01),
+            (self.gaze_pair(supported=False), 10.01),
+            (self.gaze_pair(source="mouse"), 10.01),
         )
-        for (gaze, measurement), now, method in cases:
-            with self.subTest(gaze=gaze, method=method):
+        for (gaze, measurement), now in cases:
+            with self.subTest(gaze=gaze, measurement=measurement):
                 self.assertFalse(eligible_gaze(gaze, measurement, self.bounds, now,
-                                               phone_present=True, profile_method=method))
+                                               phone_present=True))
 
     def test_pointer_training_pause_disconnect_and_off_desktop_revoke(self):
         gaze, measurement = self.gaze_pair()
-        common = dict(phone_present=True, profile_method="personal")
+        common = dict(phone_present=True)
         for gates in ({"pointer_mode": True}, {"mouse_control": True},
                       {"training": True}, {"setup": True}, {"running": False},
                       {"phone_present": False}):
@@ -106,8 +105,7 @@ class GameGazeWindowsTests(unittest.TestCase):
                 gaze = Gaze(50, 50, __import__("time").monotonic(), 25)
                 measurement = GazeMeasurement(gaze.captured, (0.0,) * 22, (50, 50), True)
                 publisher.publish(gaze, measurement, Rect(0, 0, 100, 100),
-                                  gaze.captured + 0.001, phone_present=True,
-                                  profile_method="points")
+                                  gaze.captured + 0.001, phone_present=True)
                 self.assertEqual(PACKET.unpack(publisher._mapping[:PACKET_SIZE])[2], FLAG_ACTIVE)
             finally:
                 publisher.close()
@@ -157,7 +155,7 @@ class ControllerGameGazeIntegrationTests(unittest.TestCase):
         self.assertEqual(factory.call_count,2)
         publisher.publish.assert_called_once_with(
             controller.gaze, None, None, 3.1, phone_present=False,
-            profile_method=None, pointer_mode=False, mouse_control=False,
+            pointer_mode=False, mouse_control=False,
             setup=False, running=True)
         self.assertFalse(controller.game_gaze_unavailable)
 

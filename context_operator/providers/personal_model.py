@@ -10,18 +10,23 @@ import warnings
 import numpy as np
 
 
-def adaptive_prediction(features,point,field,supported=True,model=None,*,clip=True):
+def feature_distance(delta):
+    return np.sqrt(np.maximum(np.mean(delta[...,4:13]**2,axis=-1),
+                              np.mean(delta[...,np.r_[0:4,13:22]]**2,axis=-1)))
+
+
+def adaptive_prediction(features,point,field,supported=True,model=None):
     """Corroborated click votes add a bounded local correction."""
-    result,route=_soft_prediction(features,point,field,supported,model,clip=clip)
+    result,route=_soft_prediction(features,point,field,supported,model)
     through_count=model.data.get('through_count',0) if model is not None else 0
     clicks=[a for a in field.get('clicks',[]) if a.get('revision',0)>through_count] if model is not None else field.get('clicks',[])
     if clicks:
         delta=(np.asarray([a['features'] for a in clicks])-features)/np.asarray(field['scale'])
-        distance=np.sqrt(np.maximum(np.mean(delta[:,4:13]**2,axis=1),np.mean(delta[:,np.r_[0:4,13:22]]**2,axis=1)))
+        distance=feature_distance(delta)
         index=int(distance.argmin());d=distance[index]
         if d<(.30 if supported else .15):
             b=np.asarray(field['bounds']);target=(np.asarray(result) if result is not None else np.asarray(point))+clicks[index]['offset']
-            if clip:target=np.clip(target,b[:2],b[:2]+b[2:]-1)
+            target=np.clip(target,b[:2],b[:2]+b[2:]-1)
             # The anchor itself advances only a bounded amount per observation.
             weight=1. if d<=.06 else max(0.,(1-(d-.06)/.24))**2
             if result is None:result=target
@@ -29,31 +34,14 @@ def adaptive_prediction(features,point,field,supported=True,model=None,*,clip=Tr
     return result,route
 
 
-def _soft_prediction(features,point,field,supported=True,model=None,*,clip=True):
+def _soft_prediction(features,point,field,supported=True,model=None):
     """Unsmoothed production predictor, also used for a frozen CV comparator."""
     x=np.asarray(features);point=np.asarray(point,float)
-    poses=field['poses'];bounds=np.asarray(field['bounds'])
-    def constrain(value):return np.clip(value,bounds[:2],bounds[:2]+bounds[2:]-1) if clip else np.asarray(value)
+    bounds=np.asarray(field['bounds'])
     network=model.predict(x) if model is not None else None
-    if poses:
-        delta=(np.asarray([a['features'] for a in poses])-x)/np.asarray(field['scale'])
-        distance=np.sqrt(np.maximum(np.mean(delta[:,4:13]**2,axis=1),np.mean(delta[:,np.r_[0:4,13:22]]**2,axis=1)))
-        # Observations collected AFTER a network's fit must still teach immediately.
-        fresh=np.array([a.get('revision',0)>model.data.get('through_count',0) for a in poses]) if model else np.ones(len(poses),bool)
-        use=fresh if network is not None else np.ones(len(poses),bool)
-        limit=(.45 if supported else .35) if network is not None else (.85 if supported else .35)
-        if use.any() and distance[use].min()<limit:
-            weights=np.exp(-.5*(distance/.45)**2);weights[(distance>1.2)|~use]=0
-            offset=(weights/weights.sum())@np.asarray([a['offset'] for a in poses])
-            result=point+offset*min(1.,weights.max()*1.3)
-            return constrain(result),'pose'
-    if network is not None:return constrain(network),'network'
+    if network is not None:return np.clip(network,bounds[:2],bounds[:2]+bounds[2:]-1),'network'
     if not supported:return None,'unsupported'
-    anchors=field['anchors']
-    if anchors:
-        anchors=np.asarray(anchors);weights=np.exp(-.5*np.sum((anchors[:,:2]-point)**2,axis=1)/600**2)
-        if weights.sum()>1e-6:point=point+(weights@anchors[:,2:4])/weights.sum()*min(1.,weights.max()*1.3)
-    return constrain(point),'base'
+    return np.clip(point,bounds[:2],bounds[:2]+bounds[2:]-1),'base'
 
 
 def cells(targets, bounds):
@@ -61,33 +49,12 @@ def cells(targets, bounds):
     uv=(np.asarray(targets)-b[:2])/b[2:]
     return (np.clip((uv[:,0]*5).astype(int),0,4)+5*np.clip((uv[:,1]*3).astype(int),0,2))
 
-def field_without_cells(field,held,bounds,rows):
+def field_without_cells(field,held,bounds):
     """Remove labels from the held-out screen cells before comparing a model."""
     if field is None:return None
     result=copy.deepcopy(field)
     result['clicks']=[a for a in result.get('clicks',[])
                       if 'target' in a and cells([a['target']],bounds)[0] not in held]
-    result['anchors']=[a for a in result.get('anchors',[])
-                       if cells([np.asarray(a[:2])+np.asarray(a[2:4])],bounds)[0] not in held]
-    # Old pose anchors have no target provenance. Keep one only when its
-    # features match a row and every nearby row names the same training cell.
-    if rows and result.get('poses'):
-        features=np.asarray([r['features'] for r in rows])
-        groups=cells([r['target'] for r in rows],bounds)
-        scale=np.asarray(result['scale'])
-        kept=[]
-        for a in result['poses']:
-            if 'target_cell' in a:
-                if a['target_cell'] is not None and a['target_cell'] not in held:kept.append(a)
-                continue
-            d=np.sqrt(np.mean(((features-np.asarray(a['features']))/scale)**2,axis=1))
-            nearby=groups[d<.16]
-            if d.min()<1e-6 and len(nearby) and len(set(nearby))==1 and nearby[0] not in held:
-                kept.append(a)
-        result['poses']=kept
-    elif result.get('poses'):
-        result['poses']=[a for a in result['poses']
-                         if 'target_cell' in a and a['target_cell'] is not None and a['target_cell'] not in held]
     return result
 
 
@@ -104,15 +71,16 @@ class DirectModel:
                 or self.center.shape!=(2,) or self.extent.shape!=(2,) or np.any(self.extent<=0)
                 or len(self.weights)!=3 or len(self.biases)!=3
                 or any(w.shape!=s or b.shape!=(s[1],) for w,b,s in zip(self.weights,self.biases,shapes))
+                or type(data.get('through_count',0)) is not int
                 or self.support.ndim!=2 or self.support.shape[1]!=22 or not 1<=len(self.support)<=700
                 or not all(np.isfinite(a).all() for a in [self.mean,self.scale,self.center,self.extent,self.support,*self.weights,*self.biases])):
             raise ValueError('Invalid personal gaze network')
 
-    def predict(self, features, guarded=True):
+    def predict(self, features):
         x=np.asarray(features,float)
         if x.shape!=(22,) or not np.isfinite(x).all():return None
         z=(x-self.mean)/self.scale
-        if guarded and np.sqrt(np.mean((self.support-z)**2,axis=1)).min()>.9:return None
+        if np.sqrt(np.mean((self.support-z)**2,axis=1)).min()>.9:return None
         for i,(w,b) in enumerate(zip(self.weights,self.biases)):
             z=z@w+b
             if i<2:z=np.tanh(z)
@@ -142,7 +110,7 @@ def fit_network(x,y,bounds,sample_quality=None):
                            support=support.tolist()))
 
 
-def train_candidate(rows,seeds,bounds,incumbent=None,field=None):
+def train_candidate(rows,seeds,bounds,field=None):
     from threadpoolctl import threadpool_limits
     # A long stay on one button must not dominate either fitting or evaluation.
     groups=cells([r['target'] for r in rows],bounds)
@@ -162,7 +130,7 @@ def train_candidate(rows,seeds,bounds,incumbent=None,field=None):
     with threadpool_limits(limits=1):
         for fold in range(3):
             held=unique[fold::3];test=np.isin(groups,held);train=~test;seed_mask=~np.isin(sg,held)
-            comparison=field_without_cells(field,held,bounds,rows)
+            comparison=field_without_cells(field,held,bounds)
             for index in np.flatnonzero(test):
                 row=rows[index]
                 if comparison is not None:
@@ -205,13 +173,31 @@ class PersonalTrainer:
         self.seeds=(np.array(profile.arrays['training_x'],copy=True),np.array(profile.arrays['training_y'],copy=True))
 
     def restore(self,data):
+        data={} if data is None else data
+        model=DirectModel(data['model']) if data.get('model') is not None else None
+        pending=DirectModel(data['pending']) if data.get('pending') is not None else None
+        pending_clicks=copy.deepcopy(data.get('pending_clicks',[]))
+        shadow=data.get('shadow',[])[-12:]
+        report=data.get('report')
+        attempted=int(data.get('attempted',0))
+        if (not isinstance(shadow,list) or any(
+                type(item['cell']) is not int or not np.isfinite([item['candidate'],item['baseline']]).all()
+                for item in shadow)):
+            raise ValueError('Invalid network check samples')
+        if report is not None:
+            if not isinstance(report,dict):raise ValueError('Invalid network report')
+            if report.get('shadow_accepted'):
+                metrics=[report['shadow_median_px'],report['shadow_baseline_median_px']]
+            elif report.get('accepted'):
+                metrics=[report['median_px'],report['baseline_median_px']]
+            else:
+                metrics=[]
+            if (type(report.get('shadow_accepted',report.get('accepted'))) is not bool or
+                    not np.isfinite(metrics).all()):
+                raise ValueError('Invalid network report')
         self.invalidate()
-        if data:
-            if data.get('model'):self.model=DirectModel(data['model'])
-            if data.get('pending'):self.pending=DirectModel(data['pending'])
-            self.pending_clicks=copy.deepcopy(data.get('pending_clicks',[]))
-            self.shadow=list(data.get('shadow',[]))[-12:]
-            self.report=data.get('report');self.attempted=int(data.get('attempted',0))
+        self.model,self.pending,self.pending_clicks=model,pending,pending_clicks
+        self.shadow,self.report,self.attempted=shadow,report,attempted
 
     def state(self):
         return dict(model=self.model.data if self.model else None,pending=self.pending.data if self.pending else None,
@@ -221,10 +207,10 @@ class PersonalTrainer:
     def request(self,rows,bounds,count,field=None):
         if self.pending or self.worker and self.worker.is_alive():return
         if len(rows)<48 or count-self.attempted<48 or len(np.unique(cells([r['target'] for r in rows],bounds)))<6:return
-        self.attempted=count;epoch=self.epoch;data=copy.deepcopy(rows);seeds=self.seeds;model=self.model;field=copy.deepcopy(field)
+        self.attempted=count;epoch=self.epoch;data=copy.deepcopy(rows);seeds=self.seeds;field=copy.deepcopy(field)
         def run():
             try:
-                result=train_candidate(data,seeds,bounds,model,field)
+                result=train_candidate(data,seeds,bounds,field)
                 if result and result['model']:
                     result['model']['through_count']=count
                     result['trained_clicks']=field.get('clicks',[]) if field else []

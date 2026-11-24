@@ -13,6 +13,7 @@ from .providers.windows import WindowsOutput, Windows
 from .providers.desktop import ScreenProvider
 from .providers.models import ContextModel, Ranker, Speech
 from .providers.gaze import PhoneGaze, learning_path as phone_learning_path
+from .personalization import ProfileUnavailable
 from .providers.phone_connection import PhoneConnection
 from .providers.fast_intent import FastIntent
 from .providers.learning import GazeLearning
@@ -65,7 +66,7 @@ class Controller(QObject):
         self.scene_provider=None;self.practice_window=0
         self.setup_close=None
         self.status='Ready to connect';self.gaze_status='Off';self.gaze_fps=0.
-        self.phone_error=''
+        self.phone_error='';self.phone_needs_setup=False
         self._reported_wifi_connection=None
         self.voice_status='Off';self.voice_state='off';self.voice_fallback=''
         self.modules={'screen':'Off','ocr':'On demand','model':'On demand'}
@@ -208,13 +209,13 @@ class Controller(QObject):
             close,self.setup_close=self.setup_close,None
             try:close()
             except Exception as exc:self.message.emit('Gaze setup','Couldn’t close setup: '+str(exc))
-        self.gaze=None;self.gaze_source_mode='none';self.gaze_status='Off';self.gaze_fps=0;self.phone_error=''
+        self.gaze=None;self.gaze_source_mode='none';self.gaze_status='Off';self.gaze_fps=0;self.phone_error='';self.phone_needs_setup=False
         self._reported_wifi_connection=None
         self.status='Paused';self.modules['screen']='Off';self.changed.emit()
 
     def toggle_phone(self):
         phone=self.phone
-        self.phone_error=''
+        self.phone_error='';self.phone_needs_setup=False
         self._reported_wifi_connection=None
         if phone is not None and self.gaze_source_mode in ('none','iphone'):
             self._revoke_gaze_target()
@@ -230,10 +231,9 @@ class Controller(QObject):
             new_phone=None
             try:
                 if phone:phone.stop()
-                variant=self.settings.get('truedepth_profile','stable')
-                new_phone=PhoneGaze(self.win.bounds(),variant,connection=PhoneConnection.from_settings(self.settings))
+                new_phone=PhoneGaze(self.win.bounds(),connection=PhoneConnection.from_settings(self.settings))
                 self.phone=new_phone
-                path=phone_learning_path(variant,new_phone.profile_key,LOCAL)
+                path=phone_learning_path(new_phone.profile_key,LOCAL)
                 if self.learning.path!=path:self.learning=GazeLearning(path)
                 new_phone.start();self.pointer_mode=False
                 self.learning.bind(new_phone.profile_key,self.win.bounds(),new_phone.feature_scale)
@@ -245,9 +245,8 @@ class Controller(QObject):
                     try:new_phone.stop()
                     except Exception:pass
                 self.phone=None
-                error=('Set up your gaze in Profile first.'
-                       if isinstance(exc,FileNotFoundError) else str(exc) or 'Couldn’t connect to iPhone')
-                self.phone_error=error
+                error=str(exc) or 'Couldn’t connect to iPhone'
+                self.phone_error=error;self.phone_needs_setup=isinstance(exc,ProfileUnavailable)
                 self.message.emit('Gaze',error);self.status=error
         self._start_clicks();self.changed.emit()
 
@@ -336,7 +335,6 @@ class Controller(QObject):
 
     def _start_clicks(self):
         teach=(self.phone and self.learning.key is not None
-                and self.settings.get('gaze_mode','truedepth')=='truedepth'
                 and self.settings.get('click_learning',True))
         if self.running and (teach or self.settings.get('anticipation',False)):
             self.clicks.start()
@@ -375,7 +373,7 @@ class Controller(QObject):
 
     def _learn_clicks(self,measurement,now,events=None):
         if events is None:events=self.clicks.drain()
-        if (not self.phone or self.learning.key is None or self.settings.get('gaze_mode','truedepth')!='truedepth'
+        if (not self.phone or self.learning.key is None
                 or not self.settings.get('click_learning',True)):
             self.click_status=('Click learning is off' if not self.settings.get('click_learning',True) else
                                'Connect iPhone to start learning from clicks' if not self.phone else
@@ -455,22 +453,19 @@ class Controller(QObject):
         except OSError as exc:
             self.message.emit('iPhone', 'Couldn’t save the address found on Wi‑Fi: '+str(exc))
 
-    def set_truedepth_profile(self,variant):
+    def activate_profile(self):
         if self.output_pending or self.busy:raise RuntimeError('Wait for the command to finish')
-        if variant not in ('stable','motion','spatial','personal'):raise ValueError('Unknown gaze profile')
-        from .settings import save
-        phone=PhoneGaze(self.win.bounds(),variant)  # Validate before changing anything.
-        path=phone_learning_path(variant,phone.profile_key,LOCAL)
+        phone=PhoneGaze(self.win.bounds())
+        path=phone_learning_path(phone.profile_key,LOCAL)
         learning=GazeLearning(path);learning.bind(phone.profile_key,self.win.bounds(),phone.feature_scale)
         learning.trainer.set_seed(phone.profile)
-        updated=dict(self.settings,truedepth_profile=variant,gaze_mode='truedepth')
         setup_close=self.setup_close;self.setup_close=None
         try:
-            self.pause();save(updated)
+            self.pause()
         except Exception:
             self.setup_close=setup_close
             raise
-        self.settings.update(updated);self.learning=learning
+        self.learning=learning
         self.status='Gaze profile selected. Connect iPhone.'
         if setup_close:
             close=setup_close
@@ -697,7 +692,6 @@ class Controller(QObject):
             self.game_gaze_publisher.publish(
                 self.gaze,phone.measurement if phone else None,desktop,now,
                 phone_present=bool(phone),
-                profile_method=getattr(phone,'method',None),
                 pointer_mode=self.pointer_mode,
                 mouse_control=self.mouse_control,
                 setup=bool(self.setup_close),

@@ -9,22 +9,9 @@ from pathlib import Path
 
 import numpy as np
 
-from ..foundations.gaze.profile import Profile
 from ..settings import LOCAL
-from .session import PROTOCOL, STARTER_PROTOCOL
-from .model import PersonalProfile, StarterProfile
-
-
-def _load_model(path, metadata):
-    with np.load(path, allow_pickle=False) as saved:
-        kind = json.loads(str(saved['settings'])).get('model_kind')
-    if kind is None:
-        return Profile.load(path, metadata)
-    if kind == PersonalProfile.MODEL_KIND:
-        return PersonalProfile.load(path, metadata)
-    if kind == StarterProfile.MODEL_KIND:
-        return StarterProfile.load(path, metadata)
-    raise ValueError('Unknown personal model format')
+from .session import STARTER_PROTOCOL
+from .model import StarterProfile
 
 
 def _bounds(bounds):
@@ -40,18 +27,15 @@ def _sha(path):
 
 
 def _accepted_report(protocol, report):
-    if not isinstance(report, dict):
-        return False
-    if protocol == PROTOCOL:
-        return (report.get('passed') is True and
-                report.get('scope') == 'same-session-independent-targets' and
-                report.get('train_targets') == 12 and report.get('check_targets') == 27)
-    if protocol == STARTER_PROTOCOL:
-        return (report.get('quality') == 'starter' and report.get('usable') is True and
-                report.get('passed') is False and
-                report.get('scope') == 'starter-independent-targets' and
-                report.get('train_targets') == 9 and report.get('check_targets') == 5)
-    return False
+    return (protocol == STARTER_PROTOCOL and isinstance(report, dict) and
+            report.get('quality') == 'starter' and report.get('usable') is True and
+            report.get('passed') is False and
+            report.get('scope') == 'starter-independent-targets' and
+            report.get('train_targets') == 9 and report.get('check_targets') == 5)
+
+
+class ProfileUnavailable(RuntimeError):
+    pass
 
 
 class ProfileStore:
@@ -83,9 +67,7 @@ class ProfileStore:
             metadata = json.loads(str(saved['metadata']))
         if metadata.get('display') != display or metadata.get('protocol') != protocol:
             raise ValueError('Personal profile belongs to another display')
-        profile = _load_model(profile_path, metadata)
-        if protocol == STARTER_PROTOCOL and not isinstance(profile, StarterProfile):
-            raise ValueError('Starter profile has the wrong model type')
+        profile = StarterProfile.load(profile_path, metadata)
         if (profile.training_x.shape[1] != 22 or
                 receipt.get('engine') != metadata.get('engine') or
                 receipt.get('model') != profile.settings.get('model') or
@@ -100,8 +82,8 @@ class ProfileStore:
             try:
                 profile, receipt = self._verified(profile_path, receipt_path, display)
                 return profile, {'available': True, 'reason': '', 'path': profile_path,
-                                 'profile_key': receipt['sha256'], 'method': 'personal',
-                                 'quality': receipt['report'].get('quality', 'full'),
+                                 'profile_key': receipt['sha256'],
+                                 'quality': receipt['report']['quality'],
                                  'report': receipt['report']}
             except (OSError, ValueError, KeyError, TypeError, AttributeError,
                     EOFError, zipfile.BadZipFile, UnicodeError):
@@ -110,7 +92,7 @@ class ProfileStore:
                   self.profile_path.exists() or self.receipt_path.exists() else
                   'Set up your gaze first')
         return None, {'available': False, 'reason': reason, 'path': None,
-                      'profile_key': None, 'method': 'personal', 'quality': None, 'report': None}
+                      'profile_key': None, 'quality': None, 'report': None}
 
     def status(self, bounds):
         _, status = self._read(bounds)
@@ -119,7 +101,7 @@ class ProfileStore:
     def load(self, bounds):
         profile, status = self._read(bounds)
         if profile is None:
-            raise RuntimeError(status['reason'])
+            raise ProfileUnavailable(status['reason'])
         return profile, status
 
     @staticmethod
@@ -129,12 +111,12 @@ class ProfileStore:
         os.replace(temporary, path)
 
     def adopt(self, profile, report, bounds, collection_path=None, activate=None):
-        """Commit a full pass or usable starter; recover incumbent on error."""
+        """Commit a usable starter; recover the accepted pair on error."""
         display = _bounds(bounds)
         protocol = profile.metadata.get('protocol')
         if (not _accepted_report(protocol, report) or
                 profile.metadata.get('display') != display or
-                (protocol == STARTER_PROTOCOL and not isinstance(profile, StarterProfile)) or
+                not isinstance(profile, StarterProfile) or
                 profile.training_x.shape[1] != 22):
             raise ValueError('Candidate has no matching independent acceptance')
         self.folder.mkdir(parents=True, exist_ok=True)
@@ -148,7 +130,7 @@ class ProfileStore:
         try:
             profile.save(staged)
             # Verify the exact bytes that will become active, without pickle.
-            _load_model(staged, profile.metadata)
+            StarterProfile.load(staged, profile.metadata)
             key = _sha(staged)
             receipt = {'version': 1, 'protocol': protocol, 'display': display,
                        'sha256': key, 'created_at': datetime.now(timezone.utc).isoformat(),
@@ -189,7 +171,3 @@ class ProfileStore:
         finally:
             staged.unlink(missing_ok=True)
             receipt_stage.unlink(missing_ok=True)
-
-
-def personal_status(bounds, folder=LOCAL):
-    return ProfileStore(folder).status(bounds)

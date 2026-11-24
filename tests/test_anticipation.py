@@ -246,7 +246,7 @@ class PersistenceTests(unittest.TestCase):
             path=Path(tmp)/'intent.json';path.write_text('{bad');p=IntentLearning(path);move(p)
             self.assertFalse(p.feedback(HumanClick(670,220,10.7,10.8,10,20),10.81));self.assertEqual(path.read_text(),'{bad')
 
-    def test_schema_two_persists_independent_gaze_weights_and_reads_legacy_mouse_state(self):
+    def test_schema_two_persists_independent_gaze_weights(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/'intent.json';p=IntentLearning(path);fixate(p);p.observe_scene(scene(10.65),10.66)
             self.assertTrue(p.feedback(HumanClick(670,220,10.7,10.8,10,20),10.81))
@@ -254,9 +254,6 @@ class PersistenceTests(unittest.TestCase):
             self.assertEqual(data['gaze']['learned'],1);self.assertNotIn('Next',path.read_text())
             restored=IntentLearning(path)
             self.assertEqual(restored.gaze_model.learned,1);np.testing.assert_allclose(restored.gaze_model.weights,p.gaze_model.weights)
-            legacy=IntentLearning(Path(tmp)/'legacy.json');legacy.path.write_text(json.dumps(p.model.state()))
-            migrated=IntentLearning(legacy.path)
-            self.assertEqual(migrated.model.learned,p.model.learned);self.assertEqual(migrated.gaze_model.learned,0)
 
 class FakeSource:
     def __init__(self):self.events=[];self.motions=[];self.started=False;self.error=''

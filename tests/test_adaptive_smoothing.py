@@ -3,7 +3,6 @@ import unittest
 
 import numpy as np
 
-from context_operator.foundations.gaze.profile import Smoother as FixedSmoother
 from context_operator.foundations.gaze.smoothing import Smoother
 
 
@@ -38,35 +37,28 @@ def step_t90(timestamps, outputs, start, target):
 
 
 class AdaptiveSmoothingTests(unittest.TestCase):
-    def test_stationary_jitter_is_comparable_at_supported_rates(self):
+    def test_stationary_jitter_stays_within_pixel_bounds_at_supported_rates(self):
         rng = np.random.default_rng(20260923)
         center = np.array([2500.0, 720.0])
-        for rate in (30, 60, 120):
+        for rate, jitter_limit in ((30, 4.31), (60, 3.15), (120, 2.30)):
             with self.subTest(rate=rate):
                 timestamps = times_at_rate(rate, 5.0)
                 noise = rng.normal(0.0, 5.0, (len(timestamps), 2))
                 points = center + noise
-                fixed = filter_trajectory(lambda: FixedSmoother(.065), timestamps, points)
                 adaptive = filter_trajectory(Smoother, timestamps, points)
-                fixed_jitter = jitter_rms(fixed[rate:], center)
-                adaptive_jitter = jitter_rms(adaptive[rate:], center)
-                ratio = adaptive_jitter / fixed_jitter
-                self.assertGreaterEqual(ratio, 0.70)
-                self.assertLessEqual(ratio, 1.30)
+                self.assertLessEqual(jitter_rms(adaptive[rate:], center), jitter_limit)
 
-    def test_rapid_800_pixel_step_has_lower_t90_without_overshoot(self):
+    def test_rapid_800_pixel_step_reaches_90_percent_without_overshoot(self):
         for rate in (30, 60, 120):
             with self.subTest(rate=rate):
                 timestamps = times_at_rate(rate, 0.75)
                 start = np.array([1000.0, 700.0])
                 target = start + np.array([800.0, 0.0])
                 points = np.asarray([start if stamp < 0.20 else target for stamp in timestamps])
-                fixed = filter_trajectory(lambda: FixedSmoother(.065), timestamps, points)
                 adaptive = filter_trajectory(Smoother, timestamps, points)
                 post_step = [i for i, stamp in enumerate(timestamps) if stamp >= 0.20]
-                fixed_t90 = step_t90(timestamps[post_step[0]:], fixed[post_step], start, target)
                 adaptive_t90 = step_t90(timestamps[post_step[0]:], adaptive[post_step], start, target)
-                self.assertLess(adaptive_t90, fixed_t90 * 0.75)
+                self.assertLessEqual(adaptive_t90, .0434)
                 self.assertTrue(np.all(adaptive[post_step, 0] >= start[0]))
                 self.assertTrue(np.all(adaptive[post_step, 0] <= target[0]))
 

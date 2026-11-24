@@ -16,7 +16,7 @@ from ..personalization.session import MIN_DURATION
 from ..providers.gaze import Sample
 from ..providers.phone_connection import PhoneConnection
 from ..settings import ASSETS, LOCAL
-from .window import DARK_SETUP_STYLE, label, paint_progress, report_problems, theme
+from .window import DARK_SETUP_STYLE, label, paint_progress, theme
 
 
 
@@ -89,9 +89,9 @@ class SetupWindow(QMainWindow):
         self.error = ''
         self.last_status_refresh = 0.
         try:
-            self.session = StarterSession.resume(self.bounds, self.archive, require_confirmation=True)
+            self.session = StarterSession.resume(self.bounds, self.archive)
         except (OSError, ValueError, TypeError) as exc:
-            self.session = StarterSession(self.bounds, self.archive, require_confirmation=True)
+            self.session = StarterSession(self.bounds, self.archive)
             self.error = 'Couldn’t resume the saved setup: ' + str(exc)
         self.candidate = self.session.candidate
         self.setWindowTitle('Mira · Set up iPhone')
@@ -208,8 +208,8 @@ class SetupWindow(QMainWindow):
         if self.fit_worker and self.fit_worker.is_alive():
             return
         self.error = ''
-        needs_live_pose = self.session.phase in ('train', 'check') or (self.session.phase == 'fit' and self.candidate is not None)
-        if needs_live_pose and self._ready() and self.session.posture_hint(self.worker.latest()):
+        needs_live_sample = self.session.phase in ('train', 'check') or (self.session.phase == 'fit' and self.candidate is not None)
+        if needs_live_sample and self._ready() and self.session.distance_hint(self.worker.latest()):
             self.refresh()
             return
         if self.session.phase == 'result':
@@ -225,9 +225,6 @@ class SetupWindow(QMainWindow):
                 preserve_attempt(self.archive, self.session.report)
                 self.session.begin_check(self.candidate, time.monotonic())
                 self.running = True
-        elif self.session.paused and self._ready():
-            self.session.next_posture(time.monotonic())
-            self.running = True
         elif self.session.phase in ('train', 'check') and self._ready():
             self.session.settle_until = time.monotonic() + .85
             self.running = True
@@ -266,15 +263,7 @@ class SetupWindow(QMainWindow):
                     self.error = ((sample.error if sample else '') or 'iPhone stopped sending gaze data.') + ' Reconnect to continue from this point.'
                     self.refresh()
             else:
-                try:
-                    advanced = self.session.feed(self.worker.latest(), time.monotonic())
-                except OSError as exc:
-                    self.running = False
-                    self.error = 'Couldn’t save the point: ' + str(exc)
-                    self.refresh()
-                    advanced = False
-                if advanced:
-                    self._target_completed()
+                self.session.feed(self.worker.latest(), time.monotonic())
         if time.monotonic()-self.last_status_refresh >= .25:
             self.refresh()
             self.last_status_refresh = time.monotonic()
@@ -299,8 +288,6 @@ class SetupWindow(QMainWindow):
         elif self.session.phase == 'result':
             self.running = False
             self._save_result()
-        elif self.session.paused:
-            self.running = False
         self.refresh()
 
     def _save_result(self):
@@ -318,7 +305,7 @@ class SetupWindow(QMainWindow):
     def restart(self):
         if self.fit_worker and self.fit_worker.is_alive():
             return
-        replacement = StarterSession(self.bounds, self.archive, require_confirmation=True)
+        replacement = StarterSession(self.bounds, self.archive)
         try:
             preserve_attempt(self.archive, self.session.report)
             replacement._save()
@@ -366,8 +353,6 @@ class SetupWindow(QMainWindow):
             message = ('Creating your gaze profile…' if self.fit_worker and self.fit_worker.is_alive() else
                        'Profile ready to check on five new points.' if self.candidate else
                        'Setup points saved. Mira will rebuild the profile and start the check again.')
-        elif self.session.paused:
-            message = f'Paused · move to {self.session.postures[self.session.posture].lower()} and continue. Keep your iPhone still.'
         elif self.running:
             message = (self.session.hold_reason or 'Keep looking at the center of the point until the ring fills.' if self._ready() else
                        (self.worker.latest().error or self.worker.latest().reason or 'Waiting for iPhone'))
@@ -375,7 +360,7 @@ class SetupWindow(QMainWindow):
             message = ('iPhone ready. Start when you’re comfortable.' if self._ready() else
                        'Connect iPhone and start tracking in Mira on your phone.')
         if not self.running and self._ready() and phase in ('train', 'check', 'fit'):
-            message = self.session.posture_hint(self.worker.latest()) or message
+            message = self.session.distance_hint(self.worker.latest()) or message
         self.status.setText(message)
         self.status.setStyleSheet('color:' + ('#E5483B' if self.error else '#A6A6A0'))
         self.guide.setVisible(not self.running)
@@ -388,16 +373,12 @@ class SetupWindow(QMainWindow):
             self.guide_body.setText('Mira checked five new points with your head in one comfortable position. '
                                    'You can refine your gaze setup as you use Mira '
                                    'by clicking near where you look.'
-                                   if starter_usable else '\n'.join(report_problems(r)) +
+                                   if starter_usable else '\n'.join(r.get('problems', [])) +
                                    '\n\nMeasurements saved for review.')
         elif phase == 'fit':
             self.guide_heading.setText('Check your gaze' if self.candidate else 'Build your gaze setup')
             self.guide_body.setText('Look at five new points the same way you did in setup. '
                                    'Mira uses them to check your gaze setup.')
-        elif self.session.paused:
-            self.guide_heading.setText(self.session.postures[self.session.posture])
-            self.guide_body.setText('Sit in one comfortable position and '
-                                   'keep your iPhone still. Select “Continue” when you’re ready.')
         else:
             self.guide_heading.setText('Look, then press Space')
             self.guide_body.setText('Place your iPhone where the TrueDepth camera can see your face. Keep it still. '
@@ -412,7 +393,7 @@ class SetupWindow(QMainWindow):
         if phase in ('train', 'check'):
             count = len(self.session.check_targets if phase == 'check' else self.session.train_targets)
             point_label = 'check points' if phase == 'check' else 'setup points'
-            self.count.setText(f'{self.session.postures[self.session.posture]} · point {self.session.index+1}/{count} · {point_label}')
+            self.count.setText(f'Point {self.session.index+1}/{count} · {point_label}')
         else:
             self.count.setText('Mira stores measurements on this PC and doesn’t save video.')
         refit = phase == 'result' and self.candidate is None and bool(
@@ -420,12 +401,11 @@ class SetupWindow(QMainWindow):
         retry_save = phase == 'result' and self.candidate is not None and self.session.candidate_key is None
         self.begin_button.setText('Rebuild gaze setup' if refit else
                                   'Save result' if retry_save else
-                                  'Continue' if self.session.paused else
                                   'Check on new points' if phase == 'fit' and self.candidate else
                                   'Rebuild gaze setup' if phase == 'fit' else
                                   'Start setup' if phase == 'train' else 'Continue check')
         self.begin_button.setVisible(not self.running and (phase != 'result' or refit or retry_save))
-        self.begin_button.setEnabled(((self._ready() and not self.session.posture_hint(self.worker.latest()))
+        self.begin_button.setEnabled(((self._ready() and not self.session.distance_hint(self.worker.latest()))
                                       or refit or retry_save or phase == 'fit' and self.candidate is None)
                                      and not (self.fit_worker and self.fit_worker.is_alive()))
         self.retry_button.setVisible(not self.running and (phase == 'result' or self.error != '' or phase == 'fit'))
@@ -497,7 +477,7 @@ def open_setup(controller, parent=None):
             raise RuntimeError('A setup point falls between screens. Adjust the screen arrangement in Windows')
     controller.pause()
     window = SetupWindow(controller, parent,
-                         on_adopt=lambda: controller.set_truedepth_profile('personal'))
+                         on_adopt=controller.activate_profile)
     controller.setup_close = window.close
     if len(screens) == 1:
         window.showFullScreen()

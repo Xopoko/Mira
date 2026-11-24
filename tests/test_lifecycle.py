@@ -1,6 +1,5 @@
 import os
 os.environ['QT_QPA_PLATFORM']='offscreen'
-import json
 import tempfile
 import unittest
 import time
@@ -25,39 +24,11 @@ class LifecycleTests(unittest.TestCase):
         self.scene=Scene(2,time.monotonic(),Rect(0,0,1000,800),(self.el,),1,'Test scene',1,Rect(0,0,900,700))
         self.c.scene=self.scene;self.c.output=Mock()
     def tearDown(self):self.c.close()
-    def test_old_rgb_settings_normalize_in_memory_without_private_write(self):
-        with tempfile.TemporaryDirectory() as folder:
-            root=Path(folder);raw={'gaze_mode':'mobilegaze','truedepth_profile':'motion','hybrid_enabled':True,'hybrid_use':True}
-            target=root/'settings.json';target.write_text(json.dumps(raw),encoding='utf-8')
-            with patch('context_operator.settings.LOCAL',root):
-                from context_operator.settings import load
-                loaded=load()
-            self.assertEqual(loaded['gaze_mode'],'truedepth');self.assertEqual(loaded['truedepth_profile'],'motion')
-            self.assertNotIn('hybrid_enabled',loaded);self.assertNotIn('hybrid_use',loaded)
-            self.assertEqual(json.loads(target.read_text(encoding='utf-8')),raw)
-    def test_legacy_usb_button_settings_are_discarded_on_load_and_save(self):
-        from context_operator.settings import load, save
-
-        with tempfile.TemporaryDirectory() as folder, patch('context_operator.settings.LOCAL',Path(folder)):
-            target=Path(folder)/'settings.json'
-            retired={'button_enabled':True,'button_vk':13,'button_device_id':'a'*64,
-                     'button_name':'Test','button_scan_code':28,'button_extended':0}
-            raw=dict(retired,phone_transport='usb',microphone='Saved microphone')
-            target.write_text(json.dumps(raw),encoding='utf-8')
-
-            loaded=load()
-            self.assertTrue(retired.keys().isdisjoint(loaded))
-            self.assertEqual(json.loads(target.read_text(encoding='utf-8')),raw)
-            save(loaded)
-
-            saved=json.loads(target.read_text(encoding='utf-8'))
-            self.assertTrue(retired.keys().isdisjoint(saved))
-            self.assertEqual((saved['phone_transport'],saved['microphone']),('usb','Saved microphone'))
     def test_late_model_result_after_stop_does_not_act(self):
         self.c.pause();self.c._decision(Intent('click',target_id='button'),self.scene,4,time.monotonic())
         self.c.output.execute.assert_not_called()
     def test_personal_profile_binds_its_own_learning_store(self):
-        self.c.learning=Mock(path=self.c.learning.path);self.c.settings['truedepth_profile']='personal'
+        self.c.learning=Mock(path=self.c.learning.path)
         path=Path('personal-learning.json')
         with patch('context_operator.controller.PhoneGaze') as provider, \
              patch('context_operator.controller.phone_learning_path',return_value=path):
@@ -79,29 +50,31 @@ class LifecycleTests(unittest.TestCase):
         provider.return_value.start.assert_called_once();provider.return_value.stop.assert_called_once()
         self.assertIsNone(self.c.phone)
     def test_missing_profile_gives_setup_guidance_without_opening_it(self):
-        with patch('context_operator.controller.PhoneGaze',side_effect=FileNotFoundError('private calibration file')):
+        with tempfile.TemporaryDirectory() as folder, patch('context_operator.providers.gaze.LOCAL',Path(folder)):
             self.c.toggle_phone()
         self.assertIsNone(self.c.phone);self.assertIsNone(self.c.setup_close)
-        self.assertEqual(self.c.status,'Set up your gaze in Profile first.')
-    def test_profile_save_failure_restores_setup_hook_and_success_closes_once(self):
+        self.assertEqual(self.c.status,'Set up your gaze first');self.assertTrue(self.c.phone_needs_setup)
+    def test_profile_activation_failure_restores_setup_hook_and_success_closes_once(self):
         import numpy as np
         close=Mock();self.c.setup_close=close
         path=Path('accepted-personal-adaptation.json')
-        for save_effect in (OSError('disk'),None):
-            with patch('context_operator.controller.PhoneGaze') as provider, \
-                 patch('context_operator.controller.phone_learning_path',return_value=path), \
-                 patch('context_operator.settings.save',side_effect=save_effect):
-                provider.return_value.profile_key='personal-profile-key'
-                provider.return_value.feature_scale=[1]*22
-                provider.return_value.profile.arrays={'training_x':np.empty((0,22)),
-                                                       'training_y':np.empty((0,2))}
-                if save_effect:
-                    with self.assertRaises(OSError):self.c.set_truedepth_profile('personal')
-                    self.assertIs(self.c.setup_close,close);close.assert_not_called()
-                else:
-                    self.c.set_truedepth_profile('personal')
+        with patch('context_operator.controller.PhoneGaze') as provider, \
+             patch('context_operator.controller.phone_learning_path',return_value=path), \
+             patch('context_operator.settings.save') as save:
+            provider.return_value.profile_key='personal-profile-key'
+            provider.return_value.feature_scale=[1]*22
+            provider.return_value.profile.arrays={'training_x':np.empty((0,22)),
+                                                   'training_y':np.empty((0,2))}
+            with patch.object(self.c,'pause',side_effect=OSError('disk')):
+                with self.assertRaises(OSError):self.c.activate_profile()
+            self.assertIs(self.c.setup_close,close);close.assert_not_called()
+            self.c.activate_profile()
+            save.assert_not_called()
         close.assert_called_once();self.assertIsNone(self.c.setup_close)
-        self.assertEqual(self.c.settings['truedepth_profile'],'personal')
+        self.assertFalse(self.c.running)
+        self.assertEqual(self.c.learning.key,'personal-profile-key')
+        self.assertEqual(self.c.learning.path,path)
+        self.assertEqual(self.c.status,'Gaze profile selected. Connect iPhone.')
     def test_pause_closes_guided_setup_exactly_once(self):
         close=Mock();self.c.setup_close=close
         self.c.pause();self.c.pause()

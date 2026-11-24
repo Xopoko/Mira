@@ -175,7 +175,7 @@ class ConnectionSettingsTests(unittest.TestCase):
         from PySide6.QtWidgets import QApplication
         cls.app=QApplication.instance() or QApplication([])
 
-    def test_settings_validate_before_stopping_and_keep_profile_choice(self):
+    def test_connection_settings_validate_before_stopping(self):
         from context_operator.controller import Controller
         from context_operator.settings import DEFAULTS
         c=Controller(dict(DEFAULTS,phone_transport='usb',vision=False,ranker=False,anticipation=False));c.timer.stop()
@@ -192,7 +192,7 @@ class ConnectionSettingsTests(unittest.TestCase):
                 c.set_phone_connection('wifi','192.168.2.42')
                 pause.assert_called_once();save.assert_called_once()
                 self.assertEqual(c.settings['phone_wifi_host'],'192.168.2.42')
-                self.assertEqual(c.settings['truedepth_profile'],'stable')
+                self.assertEqual(c.settings['phone_transport'],'wifi')
         finally:c.close()
 
     def test_fresh_settings_default_to_wifi_but_keep_saved_usb(self):
@@ -248,7 +248,9 @@ class ConnectionSettingsTests(unittest.TestCase):
                 provider.return_value.profile.arrays={'training_x':np.empty((0,22)),'training_y':np.empty((0,2))}
                 c.toggle_phone()
                 provider.assert_called_once()
-                self.assertEqual(provider.call_args.args[1],'stable')
+                self.assertEqual(provider.call_args.args,(c.win.bounds(),))
+                connection=provider.call_args.kwargs['connection']
+                self.assertEqual((connection.transport,connection.host),('wifi','192.168.2.42'))
                 provider.return_value.start.assert_called_once()
             self.assertIs(c.phone,provider.return_value)
         finally:c.close()

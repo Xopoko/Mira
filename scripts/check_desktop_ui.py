@@ -145,7 +145,7 @@ texts=[b.text() for b in window.findChildren(QPushButton)]
 assert not any(word in text for text in texts for word in ('MobileGaze','UniGaze','hybrid','experiment'))
 assert [b.text() for b in window.nav]==['Overview','Profile','Practice','Settings']
 results['interactions']='passed'
-with patch('context_operator.personalization.personal_status',return_value={}),patch(
+with patch('context_operator.personalization.ProfileStore.status',return_value={}),patch(
         'context_operator.personalization.history.latest_result',return_value=None):
     window._profile_stamp=None
     window.refresh_profile()
@@ -154,7 +154,7 @@ with patch('context_operator.personalization.personal_status',return_value={}),p
 # A failed retry must not replace the accepted profile's displayed metrics.
 accepted={'quality':'starter','usable':True,'passed':False,'median_px':276.,
           'p90_px':422.,'jitter_px':56.,'coverage':.9667}
-with patch('context_operator.personalization.personal_status',return_value={
+with patch('context_operator.personalization.ProfileStore.status',return_value={
         'available':True,'report':accepted}),patch(
         'context_operator.personalization.history.latest_result',return_value={
             'median_px':999.,'p90_px':999.,'jitter_px':999.,'coverage':.2,
@@ -196,7 +196,7 @@ with patch.dict(c.settings,click_learning=True,anticipation=True), \
 results['profile_plain_status_and_microphone_picker']='passed'
 with tempfile.TemporaryDirectory() as folder, \
      patch('context_operator.settings.LOCAL',Path(folder)), \
-     patch('context_operator.personalization.personal_status',return_value={}) as profile, \
+     patch('context_operator.personalization.ProfileStore.status',return_value={}) as profile, \
      patch('context_operator.personalization.history.latest_result',return_value={'usable':False}), \
      patch('context_operator.ui.window.find_phones',return_value=['192.168.2.42']):
     c.history.clear()
@@ -266,7 +266,7 @@ with tempfile.TemporaryDirectory() as folder:
     setup.refresh();app.processEvents()
     setup.grab().save(str(out/'setup-recording.png'))
     assert setup.begin_button.isHidden()
-    setup.running=False;setup.session.paused=False;setup.session.posture=0
+    setup.running=False
     setup.refresh();app.processEvents()
     setup.grab().save(str(out/'setup-paused.png'))
     setup.session.phase='result'
@@ -277,7 +277,7 @@ with tempfile.TemporaryDirectory() as folder:
     setup.refresh();app.processEvents()
     setup.grab().save(str(out/'setup-result-example.png'))
     assert not setup.apply_button.isHidden()
-    setup.session.report.update({'usable':False,'failed_postures':[0],
+    setup.session.report.update({'usable':False,
         'problems':['High error on new points.']})
     setup.refresh();app.processEvents()
     setup.grab().save(str(out/'setup-failed-example.png'))

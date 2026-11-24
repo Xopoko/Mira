@@ -8,9 +8,9 @@ from PySide6.QtWidgets import QApplication
 from context_operator.core.contracts import Rect,Element,Scene,Focus,Gaze,GazeMeasurement
 from context_operator.controller import Controller
 from context_operator.providers.learning import GazeLearning
-from context_operator.providers.personal_model import DirectModel,field_without_cells
+from context_operator.providers.personal_model import DirectModel
 from context_operator.providers.gaze import PhoneGaze,Sample
-from context_operator.foundations.gaze.profile import Smoother
+from context_operator.foundations.gaze.smoothing import Smoother
 from context_operator.settings import DEFAULTS
 
 APP=QApplication.instance() or QApplication([])
@@ -25,44 +25,6 @@ class SavedLearningTests(unittest.TestCase):
         self.bounds=Rect(0,0,1000,700);self.scale=np.full(22,.05)
         self.m=GazeLearning(self.path);self.m.bind('original',self.bounds,self.scale)
     def tearDown(self):self.temp.cleanup()
-    def test_same_screen_prediction_different_head_pose_reload(self):
-        poses = []
-        rows = []
-        for distance, target in ((.4, [700, 70]), (.8, [100, 500])):
-            features = list(sample(0, distance).features)
-            poses.append(dict(features=features, offset=[target[0]-350, target[1]-350], count=3))
-            rows.append(dict(features=features, target=target, baseline=[350, 350],
-                             base=[350, 350], supported=True))
-        old = dict(version=3, profile='original', display=self.bounds.as_list(), anchors=[],
-                   count=6, pose_anchors=poses, mouse_samples=rows, feature_scale=self.scale.tolist())
-        self.path.write_text(json.dumps(old))
-        self.m.bind('original', self.bounds, self.scale)
-        a = self.m.correct(Gaze(350, 350, 120), sample(120, .4), 120)
-        b = self.m.correct(Gaze(350, 350, 121), sample(121, .8), 121)
-        self.assertAlmostEqual(a.x, 700)
-        self.assertAlmostEqual(b.x, 100)
-        self.assertEqual(self.m.rows, rows)
-
-    def test_extrapolated_base_reaches_target_and_unknown_pose_is_rejected(self):
-        pose = dict(features=list(sample(0, .8).features), offset=[-1800, -280], count=3)
-        old = dict(version=2, profile='original', display=self.bounds.as_list(), anchors=[],
-                   count=3, pose_anchors=[pose], feature_scale=self.scale.tolist())
-        self.path.write_text(json.dumps(old))
-        self.m.bind('original', self.bounds, self.scale)
-        self.assertAlmostEqual(self.m.correct(None,sample(120,.8,x=2500,supported=False),120).x,700)
-        self.assertIsNone(self.m.correct(None,sample(121,1.3,supported=False),121))
-        self.assertIsNone(self.m.correct(None,sample(121,.8,supported=False),122))
-
-    def test_v2_migration_keeps_old_data_and_backup(self):
-        old=dict(version=2,profile='original',display=self.bounds.as_list(),anchors=[[300,300,20,10,4]],count=1000,
-                 pose_anchors=[dict(features=list(sample(0).features),offset=[5,7],count=3)],feature_scale=self.scale.tolist())
-        before=json.dumps(old).encode();self.path.write_bytes(before)
-        self.m.bind('original',self.bounds,self.scale)
-        self.assertTrue(self.m.learn_click(sample(100, .8), (360, 360)))
-        saved=json.loads(self.path.read_text());self.assertEqual(saved['anchors'],old['anchors'])
-        self.assertEqual(saved['pose_anchors'],old['pose_anchors']);self.assertEqual(saved['count'],1001)
-        self.assertEqual(self.path.with_name('learning.before-mouse.json').read_bytes(),before)
-
     def test_binding_another_profile_invalidates_late_training_result(self):
         epoch=self.m.trainer.epoch;self.m.bind('new',self.bounds,self.scale)
         self.m.trainer.results.put((epoch,{'model':None,'accepted':True},''));self.m.poll_training()
@@ -102,26 +64,6 @@ class SavedLearningTests(unittest.TestCase):
         self.assertEqual(len(restored.click_anchors),1)
         self.assertEqual(restored.click_anchors[0]['offset'],[55.,0.])
         self.assertAlmostEqual(restored.correct(None,sample(14,.8,x=350,y=100),14).x,455.)
-
-class HeldoutPoseProvenanceTests(unittest.TestCase):
-    def test_identical_and_near_identical_features_with_two_targets_are_excluded(self):
-        bounds=[0,0,1000,700];scale=[.05]*22
-        base=[0.]*22;near=base.copy();near[6]=.0001
-        rows=[dict(features=base,target=[100,100]),dict(features=near,target=[350,100])]
-        for other in (base,near):
-            field=dict(poses=[dict(features=other,offset=[250,0],count=1)],
-                       anchors=[],clicks=[],scale=scale,bounds=bounds)
-            filtered=field_without_cells(field,np.array([1]),bounds,rows)
-            self.assertEqual(filtered['poses'],[])
-
-    def test_explicit_pose_cell_is_kept_only_for_training_cell(self):
-        bounds=[0,0,1000,700]
-        field=dict(poses=[dict(features=[0.]*22,offset=[0,0],target_cell=0),
-                          dict(features=[0.]*22,offset=[250,0],target_cell=1),
-                          dict(features=[0.]*22,offset=[0,0],target_cell=None)],
-                   anchors=[],clicks=[],scale=[1.]*22,bounds=bounds)
-        filtered=field_without_cells(field,np.array([1]),bounds,[])
-        self.assertEqual([a['target_cell'] for a in filtered['poses']],[0])
 
 class MouseControllerTests(unittest.TestCase):
     def setUp(self):

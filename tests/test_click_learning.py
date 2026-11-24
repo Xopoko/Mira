@@ -103,8 +103,7 @@ class HardCorrectionTests(unittest.TestCase):
     def tearDown(self):self.temp.cleanup()
 
     def test_click_advances_toward_target_by_bounded_step(self):
-        self.m.pose_anchors=[dict(features=list(sample(0,head=i*.001).features),offset=[10,-10],count=40) for i in range(80)]
-        before=self.m.correct(Gaze(35,2,10),sample(10),10)
+        before=self.m.correct(Gaze(25,12,10),sample(10),10)
         self.assertTrue(self.m.learn_click(sample(10),(25,72)))
         result=self.m.correct(Gaze(35,2,10),sample(10),10)
         self.assertGreater(result.y,before.y)
@@ -165,36 +164,16 @@ class HardCorrectionTests(unittest.TestCase):
         self.assertEqual(self.m.count, 1)
         self.assertEqual(len(self.m.undo), 1)
 
-    def test_v3_migration_preserves_original_data_and_backup(self):
-        old=dict(version=3,profile='original',display=self.m.bounds.as_list(),anchors=[],pose_anchors=[],
-                 feature_scale=[1]*22,count=154,mouse_samples=[],personal_network=None)
-        before=json.dumps(old).encode();self.path.write_bytes(before);self.m.bind('original',self.m.bounds,np.ones(22))
-        self.m.learn_click(sample(10),(25,72))
-        self.assertEqual(self.path.with_name('learning.before-clicks.json').read_bytes(),before)
-        saved=json.loads(self.path.read_text());self.assertEqual(saved['count'],155);self.assertEqual(saved['version'],5)
-        self.m.undo_last();self.assertEqual(self.m.count,154);self.assertEqual(self.m.click_anchors,[])
-
-    def test_v4_clicks_are_quarantined_with_byte_exact_backup(self):
-        s=sample(10)
-        click_row=dict(features=list(s.features),target=[800,600],base=list(s.point),
-                       baseline=list(s.point),supported=False,source='physical-click')
-        mouse_row=dict(click_row,source='mouse',supported=True)
-        old=dict(version=4,profile='original',display=self.m.bounds.as_list(),anchors=[],pose_anchors=[],
-                 feature_scale=[1]*22,count=9,mouse_samples=[click_row,mouse_row],
-                 click_anchors=[dict(features=list(s.features),offset=[775,588])],
-                 personal_network=dict(model=None,report=dict(accepted=True),attempted=9))
-        before=json.dumps(old).encode();self.path.write_bytes(before)
+    def test_invalid_saved_network_does_not_apply_other_corrections(self):
+        self.m.learn_click(sample(10),(25,72));data=json.loads(self.path.read_text())
+        data['feature_scale']=[2.]*22
+        data['personal_network']['pending']={'mean': [0.]}
+        self.path.write_text(json.dumps(data))
         self.m.bind('original',self.m.bounds,np.ones(22))
-        self.assertEqual(self.path.with_name('learning.before-safe-clicks.json').read_bytes(),before)
-        self.assertEqual(self.m.click_progress['legacy_quarantined'],1)
-        self.assertEqual(self.m.click_anchors,[])
-        self.assertEqual(len(self.m.rows),1)
-        self.assertIsNone(self.m.trainer.report)
-        self.assertEqual(self.path.read_bytes(),before)
-        self.m.learn_click(s,(25,72))
-        saved=json.loads(self.path.read_text());self.assertEqual(saved['version'],5)
-        self.assertEqual(saved['click_accepted'],1)
-        self.assertEqual(self.path.with_name('learning.before-safe-clicks.json').read_bytes(),before)
+        self.assertEqual((self.m.count,self.m.click_accepted),(0,0))
+        self.assertFalse(self.m.click_anchors)
+        self.assertIsNone(self.m.trainer.pending)
+        np.testing.assert_array_equal(self.m.feature_scale,np.ones(22))
 
     def test_failed_undo_preserves_disk_live_model_and_retry(self):
         self.m.learn_click(sample(10),(25,72));before=self.path.read_bytes()
@@ -216,7 +195,7 @@ class NetworkAcceptanceTests(unittest.TestCase):
             for _ in range(8):
                 rows.append(dict(features=features,target=target,base=base,baseline=base,
                                  supported=True,source='physical-click',weight=1.))
-        field=dict(poses=[],anchors=[],clicks=clicks,scale=[1.]*22,bounds=bounds)
+        field=dict(clicks=clicks,scale=[1.]*22,bounds=bounds)
         fake=SimpleNamespace(predict=lambda x:np.zeros(2),data={})
         with patch('context_operator.providers.personal_model.fit_network',return_value=fake):
             report=train_candidate(rows,(np.empty((0,22)),np.empty((0,2))),bounds,field=field)
