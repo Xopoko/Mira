@@ -54,8 +54,9 @@ QTest.keyClick(window.practice_buttons['Top left'], Qt.Key_Tab)
 assert window.practice_buttons['Plus'].hasFocus()
 window.resize(1220, 900)
 app.processEvents()
-window.editor.setFocus()
-QTest.keyClick(window.editor,Qt.Key_Tab)
+assert not window.editor.isVisible() and not window.log.isVisible()
+window.practice_buttons['Clock'].setFocus()
+QTest.keyClick(window.practice_buttons['Clock'],Qt.Key_Tab)
 assert window.practice_command.hasFocus()
 window.practice_command.setText('click')
 QTest.keyClick(window.practice_command,Qt.Key_A,Qt.ControlModifier)
@@ -64,6 +65,10 @@ field=window.practice_command.grab().toImage()
 assert field.pixelColor(field.width()//2,0).name()=='#3d6bff'
 assert any(field.pixelColor(x,field.height()//2).name()=='#2c4fd1' for x in range(10,45))
 window.practice_command.clear()
+window.practice_tools_button.click()
+assert window.editor.isVisible() and window.log.isVisible()
+window.practice_tools_button.click()
+assert not window.editor.isVisible() and not window.log.isVisible()
 
 with patch('context_operator.ui.window.time.monotonic',return_value=100.):
     window.last_paint=0;window.refresh()
@@ -89,26 +94,69 @@ with patch('context_operator.ui.window.time.monotonic',return_value=100.):
     assert window.voice_value.text()=='Error · Recognition failed'
     window.last_paint=0
     c._output({'target':'Plus'},Intent('click'),'',c.generation,99.9)
-    assert window.target.text()=='Go · Click sent to Windows'
+    assert window.target.text()=='Click sent to Windows'
 with patch('context_operator.ui.window.time.monotonic',return_value=103.):
     window.last_paint=0;window.refresh()
-    assert window.target.text()=='Live · look at something'
+    assert window.target.text()=='Mira is running'
     window.last_paint=0
     c._output(None,Intent('click'),'Test dispatch error',c.generation,102.9)
-    assert window.target.text()=='Live · look at something'
+    assert window.target.text()=='Mira is running'
 c.pause()
 window.last_paint=0;window.refresh()
 results['keyboard_focus_selection_and_source_feedback']='passed'
 
 window.navigate(2)
+assert window.practice_button.text() == 'Connect iPhone'
+window.practice_button.click()
+assert window.stack.currentIndex() == 0 and not c.running
+window.navigate(2)
 window.practice_buttons['Plus'].click()
 assert window.count.text()=='1'
 window.practice_buttons['Reset'].click()
 assert window.count.text()=='0'
-window.c.command=Mock()
-window.practice_command.setText('click')
-QTest.keyClick(window.practice_command,Qt.Key_Return)
-window.c.command.assert_called_once_with('click')
+
+def start_preview():
+    assert c.practice_window == int(window.winId())
+    c.running = True
+
+with patch.object(c, 'start', side_effect=start_preview) as start, patch.object(c, 'command') as command:
+    stale_scene = object()
+    c.scene = stale_scene
+    previous_epoch = c.action_epoch
+    window.open_mouse_preview()
+    start.assert_called_once_with()
+    assert window.practice_active and window.pointer.isChecked() and c.pointer_mode
+    c._scene(stale_scene, c.generation, previous_epoch)
+    assert c.scene is None
+
+    window.practice_command.setText('click Plus')
+    window.run_practice_command.click()
+    command.assert_called_once_with('click Plus')
+    assert window.practice_command.text() == 'click Plus'
+    c.scene = object()
+    window.practice_command.setText('click Minus')
+    QTest.keyClick(window.practice_command,Qt.Key_Return)
+    command.assert_called_with('click Minus')
+    assert not window.practice_command.text()
+
+    window.navigate(0)
+    assert not window.practice_active and not c.running and not c.pointer_mode and c.practice_window == 0
+
+    c.running = True
+    c.phone = phone = SimpleNamespace(worker=SimpleNamespace(frames=1, is_alive=lambda: True))
+    window.last_paint = 0
+    window.refresh()
+    assert window.practice_button.text() == 'Try eye tracking'
+    window.navigate(2)
+    window.practice_button.click()
+    assert window.practice_active and not c.pointer_mode
+    window.open_mouse_preview()
+    window.open_gaze_practice()
+    assert c.phone is phone and window.practice_active and not window.pointer.isChecked() and not c.pointer_mode
+    c.phone = None
+    window.navigate(0)
+    assert c.running and c.practice_window == 0
+    c.pause()
 window.navigate(3)
 assert window.advanced.accessibleDescription()=='Collapsed'
 devices=[{'name':'USB microphone','hostApi':'Windows WASAPI','index':4},
@@ -197,53 +245,52 @@ results['profile_plain_status_and_microphone_picker']='passed'
 with tempfile.TemporaryDirectory() as folder, \
      patch('context_operator.settings.LOCAL',Path(folder)), \
      patch('context_operator.personalization.ProfileStore.status',return_value={}) as profile, \
-     patch('context_operator.personalization.history.latest_result',return_value={'usable':False}), \
-     patch('context_operator.ui.window.find_phones',return_value=['192.168.2.42']):
+     patch('context_operator.personalization.history.latest_result',return_value={'usable':False}):
     c.history.clear()
     window.navigate(0);window._profile_stamp=None
     window.last_paint=0;window.refresh()
-    marks=lambda: [step[0].property('done') for step in window.guide_steps]
-    assert marks()==[False,False,False,False]
-    assert not window.gaze_btn.isVisible() and not window.voice_btn.isVisible()
-    assert window.run.isHidden() and window.reason.text()=='Finish Get started below.'
-    assert window.guide_steps[2][1].text()=='Set up first'
+    assert window.gaze_btn.isVisible() and window.gaze_btn.text()=='Set up iPhone'
+    assert window.mouse_preview.isVisible() and window.mouse_preview.text()=='Try with mouse'
+    assert window.phone_settings_button.isVisible()
+    assert not window.voice_btn.isVisible() and not window.run.isVisible()
+    with patch.object(window,'open_setup') as open_setup:
+        window.gaze_btn.click()
+        open_setup.assert_called_once_with()
     assert window.validation_verdict.text()=='Accuracy: Fair · try setup again'
-    assert window.focus_panel.isHidden() and window.scene_map_button.text()=='Show screen map'
+    assert not window.scene_map_button.isVisible()
+    window.more_controls.click()
+    assert window.run.isVisible() and window.voice_btn.isVisible()
+    assert window.scene_map_button.isVisible() and window.scene_map_button.text()=='Show screen map'
     window.scene_map_button.click()
-    assert load()['show_scene_map'] and not window.focus_panel.isHidden()
+    assert load()['show_scene_map'] and window.focus_panel.isVisible()
     window.scene_map_button.click()
-    assert not load()['show_scene_map'] and window.focus_panel.isHidden()
-    window.guide_steps[0][2].click()
-    deadline=time.monotonic()+2
-    while window._phone_search is not None and time.monotonic()<deadline:
-        QTest.qWait(10)
-    assert marks()==[True,False,False,False] and load()['phone_wifi_host']=='192.168.2.42'
+    assert not load()['show_scene_map'] and not window.focus_panel.isVisible()
+    window.more_controls.click()
+
     profile.return_value={'available':True,'report':accepted}
-    window._profile_stamp=None;window.last_paint=0;window.refresh()
-    assert marks()==[True,True,False,False] and window.guide_steps[2][2].text()=='Connect iPhone'
-    assert window.run.isHidden() and not window.gaze_btn.isVisible()
+    window.navigate(1)
+    window.setup_adopted()
+    assert window.stack.currentIndex()==0 and window.gaze_btn.text()=='Connect iPhone'
+    assert window.gaze_btn.hasFocus() and not window.run.isVisible()
+    with patch.object(c,'toggle_phone') as connect_phone:
+        window.gaze_btn.click()
+        connect_phone.assert_called_once_with()
+
     c.running=True;c.phone=SimpleNamespace(worker=SimpleNamespace(is_alive=lambda:True),stop=Mock())
+    window._profile_stamp=None;window.last_paint=0;window.refresh()
+    assert not window.gaze_btn.isVisible() and window.disconnect_phone.text()=='Cancel connection'
     c.gaze_source_mode='iphone';c.gaze=Gaze(0,0,time.monotonic())
     window.last_paint=0;window.refresh()
-    assert marks()==[True,True,True,False]
+    assert window.gaze_btn.isVisible() and window.gaze_btn.text()=='Open Practice'
     assert window.run.isVisible() and window.run.text()=='Pause'
-    with patch.object(c,'running',False):
-        window.last_paint=0;window.refresh()
-        assert window.run.isVisible() and window.run.text()=='Start'
-    assert not window.gaze_btn.isVisible() and not window.voice_btn.isVisible()
-    window.guide_steps[3][2].click()
-    window.last_paint=0;window.refresh()
-    assert marks()==[True,True,True,True] and window.start_guide.isHidden()
+    assert window.disconnect_phone.isVisible() and not window.voice_btn.isVisible()
+    app.processEvents()
+    window.grab().save(str(out/'overview-connected.png'))
+    window.gaze_btn.click()
     assert window.practice_active and not c.pointer_mode and not c.microphone and not c.history
-    window.navigate(0);window.last_paint=0;window.refresh()
-    assert window.gaze_btn.isVisible() and window.voice_btn.isVisible()
-    assert load()['first_run_done']
-    c.pause();c.settings['first_run_done']=False
-    window.last_paint=0;window.refresh()
-    assert not window.start_guide.isHidden()
-    window.hide_guide_button.click()
-    assert load()['first_run_done'] and window.start_guide.isHidden()
-    assert window.run.isVisible() and window.gaze_btn.isVisible() and window.voice_btn.isVisible()
+    window.navigate(0)
+    assert c.running and c.phone is not None and not window.practice_active
+    c.pause()
 results['first_run_verdict_and_saved_map']='passed'
 window.close()
 with tempfile.TemporaryDirectory() as folder:
@@ -255,6 +302,10 @@ with tempfile.TemporaryDirectory() as folder:
                       worker_factory=lambda *a,**k:worker)
     setup.timer.stop();setup.resize(1220,900);setup.show();app.processEvents()
     setup.grab().save(str(out/'setup-welcome.png'))
+    worker.latest.return_value=Sample(error='Could not find iPhone')
+    setup.worker=worker
+    setup.refresh()
+    assert 'Connection settings' in setup.status.text() and not setup.begin_button.isEnabled()
     now=time.monotonic()
     def frame(seq,stamp):
         return Sample(seq=seq,captured=stamp,features=np.zeros(22),

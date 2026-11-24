@@ -201,7 +201,6 @@ class ConnectionSettingsTests(unittest.TestCase):
             path=Path(directory)/'settings.json'
             fresh=load()
             self.assertEqual((fresh['phone_transport'],fresh['phone_wifi_host']),('wifi',''))
-            self.assertFalse(fresh['first_run_done'])
             self.assertFalse(fresh['show_scene_map'])
             self.assertFalse(path.exists())
             saved='{"phone_transport":"usb","phone_wifi_host":"192.168.2.42"}'
@@ -231,7 +230,7 @@ class ConnectionSettingsTests(unittest.TestCase):
         try:
             with patch('context_operator.ui.window.find_phones',side_effect=OSError('adapter failed')), \
                  patch('context_operator.ui.window.threading.Thread') as thread:
-                window.start_phone_search(from_guide=True)
+                window.start_phone_search()
                 thread.call_args.kwargs['target']()
             self.assertEqual(window.phone_find_status.text(),'Couldn’t search for iPhone: adapter failed')
             self.assertTrue(window.find_phone.isEnabled())

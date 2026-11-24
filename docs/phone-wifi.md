@@ -8,16 +8,20 @@ This guide covers the connection itself. First
 
 1. Put the iPhone and PC on the same trusted local network. The PC can use
    Ethernet. Guest networks may block connections between devices.
-2. Open Mira on iPhone, select **Wi-Fi** in the top-right menu and tap
-   **Start Tracking**. Grant camera and local network access if prompted.
-3. On the PC, select **Find iPhone** in **Overview → Get started** or in
-   **Settings → iPhone**.
+2. Open Mira on iPhone and tap **Start Tracking**. Grant camera and local
+   network access if prompted. If you previously set the companion to USB,
+   switch it back to **Wi-Fi** in the top-right menu first.
+3. On the PC, select **Set up iPhone** in **Overview**, then select
+   **Connect iPhone** in the setup window. If you already have a gaze
+   profile, select **Connect iPhone** directly in **Overview**. Mira looks
+   for the phone automatically over Wi-Fi.
 
-**Find iPhone** probes the 254 neighbouring addresses of each private IPv4
-address the PC has. If the phone is elsewhere on a larger network, or discovery
-fails, enter the address shown on the phone in **Settings → iPhone** and
-select **Save connection**. If the PC is set to USB, select **Wi-Fi · home
-network** in the same panel first.
+## Enter the address manually
+
+If Mira can’t find your iPhone, close the setup window if it’s open and select
+**Connection settings** in **Overview**. In **Settings → iPhone**, select
+**Wi‑Fi · home network**, enter the address shown on your phone, and select
+**Save connection**. Return to **Overview** and try again.
 
 ## While tracking
 
@@ -33,6 +37,10 @@ on a local network you trust. A device on that network can request the stream
 while tracking is active.
 
 ## Transport details
+
+Discovery probes the neighbouring addresses in the `/24` network of each private
+IPv4 address on the PC. On a larger network, enter the phone’s address manually
+if discovery misses it.
 
 The PC requests the latest frame over TCP port `39472`, one request at a time.
 The phone keeps only the latest frame in memory and reports its age with each

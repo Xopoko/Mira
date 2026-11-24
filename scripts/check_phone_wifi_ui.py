@@ -20,7 +20,7 @@ app=QApplication([])
 for name in ('SegUIVar.ttf','segoeui.ttf','segoeuib.ttf','seguisb.ttf','seguisym.ttf'):
     QFontDatabase.addApplicationFont('C:/Windows/Fonts/'+name)
 app.setFont(QFont('Segoe UI',10))
-c=Controller(dict(DEFAULTS,vision=False,ranker=False,anticipation=False,phone_transport='wifi',first_run_done=True))
+c=Controller(dict(DEFAULTS,vision=False,ranker=False,anticipation=False,phone_transport='wifi'))
 c.timer.stop()
 failure=WifiPhoneNotFound()
 c.phone=SimpleNamespace(worker=Mock(failure=failure,is_alive=lambda:False),stop=Mock())
@@ -86,7 +86,7 @@ with patch('context_operator.settings.save') as save:
     assert save.call_count==2
 c.phone_error='Set up your gaze first';c.phone_needs_setup=True
 w.last_paint=0;w.refresh()
-assert w.gaze_heading.text()=='Set up your gaze first' and w.gaze_btn.text()=='Set up'
+assert w.gaze_btn.text()=='Set up iPhone' and w.phone_settings_button.isVisible()
 with patch.object(w,'open_setup') as setup:
     w.gaze_btn.click()
     setup.assert_called_once()

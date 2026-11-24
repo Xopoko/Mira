@@ -95,9 +95,9 @@ class Controller(QObject):
                 with auto.UIAutomationInitializerInThread():
                     provider=self.screen_factory();self.scene_provider=provider
                     while not stop.is_set():
+                        epoch=self.action_epoch
                         provider.practice_window=self.practice_window
                         provider.attention=self.attention
-                        epoch=self.action_epoch
                         scene=provider.observe()
                         if not stop.is_set():self.received_scene.emit(scene,generation,epoch)
                         stop.wait(.06)
@@ -109,6 +109,17 @@ class Controller(QObject):
         threading.Thread(target=scan,daemon=True,name='screen-perception').start()
         if self.settings['vision']:self._start_vision(stop,generation)
         self.changed.emit()
+
+    def set_practice_scope(self, window, *, use_mouse=False):
+        if (window, use_mouse) == (self.practice_window, self.pointer_mode):
+            return
+        self.practice_window = window
+        self.pointer_mode = use_mouse
+        self._revoke_gaze_target()
+        self.scene = None
+        self.vision_elements = ()
+        self.vision_sources = {}
+        self.action_confirmation = None
 
     def _ranker_for_command(self):
         if self.ranker is None:
@@ -146,6 +157,7 @@ class Controller(QObject):
                 from .providers.visual_regions import verified,crop
                 cache=VisualCache(stop,PerceptionClient,unavailable)
                 while not stop.wait(.1):
+                    epoch=self.action_epoch
                     scene=self.scene;provider=self.scene_provider
                     if scene is None or provider is None:continue
                     region=None;gaze=self.attention
@@ -159,7 +171,6 @@ class Controller(QObject):
                     if image.width>1600 or image.height>1000:
                         # Full-window recognition is useful on a spoken request; continuous gaze uses a region.
                         continue
-                    epoch=self.action_epoch
                     window=scene.window_map(scene.window)
                     owner=(scene.window,window.pid if window else 0,scene.window_rect,epoch)
                     result=cache.lookup_frame(owner,rect,image)
@@ -364,6 +375,9 @@ class Controller(QObject):
 
     def _learn_clicks(self,measurement,now,events=None):
         if events is None:events=self.clicks.drain()
+        if self.pointer_mode:
+            self.click_history.clear()
+            return False
         if (not self.phone or self.learning.key is None
                 or not self.settings.get('click_learning',True)):
             self.click_status=('Click learning is off' if not self.settings.get('click_learning',True) else

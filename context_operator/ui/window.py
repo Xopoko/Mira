@@ -111,7 +111,6 @@ QWidget#canvas QLabel#stageMuted {color:#A6A6A0;}
 """
 
 GO_CONFIRMATION_SECONDS = 2.0
-GUIDE_PHONE_HINT = 'Open Mira on iPhone, choose Wi‑Fi and tap Start Tracking. Mira finds it automatically.'
 
 CHEVRON = QByteArray(b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 8">'
                     b'<path d="M1 1l5 5 5-5" stroke="#5C5C57" stroke-width="1.5" fill="none" '
@@ -293,15 +292,11 @@ class Window(QMainWindow):
 
     def __init__(self,controller):
         super().__init__();self.c=controller;self.settings=controller.settings;self.overlays=[];self.setup_window=None
-        self.setWindowTitle('Mira');self.resize(1220,900);self.setMinimumSize(960,680)
+        self.setWindowTitle('Mira');self.resize(1120,760);self.setMinimumSize(900,640)
         self.setWindowIcon(QIcon(str(ASSETS/'icon.png')));self.setStyleSheet(theme())
         self.last_paint=0.;self.counter=0;self.practice_active=False;self._profile_stamp=None;self._profile_status={}
+        self._practice_started_control = False
         self._phone_search = None
-        self._guide_search = False
-        self._guide_search_status = ''
-        self._phone_found = False
-        self._guide_connected = False
-        self._guide_save_attempted = False
         self._microphone_listing = False
         self._saved_phone_host = self.settings.get('phone_wifi_host', '')
         self.phone_search_finished.connect(self.finish_phone_search)
@@ -357,19 +352,11 @@ class Window(QMainWindow):
         return layout
 
     def build_control(self):
-        layout=self.page('Overview','See where you’re looking on your screen with iPhone gaze tracking.')
-        frame,box=panel('cue');box.setContentsMargins(22,17,22,17)
+        layout=self.page('Overview','See the area of the screen you’re looking at.')
+        self.build_phone_card(layout)
+
+        self.control_panel,box=panel('cue');box.setContentsMargins(22,17,22,17)
         row=QHBoxLayout();row.setSpacing(20)
-        self.cue_lamps={}
-        for name in ('Standby', 'Go'):
-            pair = QWidget()
-            column = QVBoxLayout(pair)
-            column.setContentsMargins(0, 0, 0, 0);column.setSpacing(4)
-            lamp = Lamp(name, 40, on_stage=True)
-            column.addWidget(lamp, 0, Qt.AlignHCenter)
-            column.addWidget(label(name, 'cueDetail'), 0, Qt.AlignHCenter)
-            row.addWidget(pair, 0, Qt.AlignVCenter)
-            self.cue_lamps[name] = lamp
         call = QWidget()
         call.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         column = QVBoxLayout(call)
@@ -384,42 +371,36 @@ class Window(QMainWindow):
         self.run.setMinimumWidth(84)
         self.run.clicked.connect(lambda: self.c.pause() if self.c.running else self.c.start())
         row.addWidget(self.run, 0, Qt.AlignVCenter)
-        box.addLayout(row);layout.addWidget(frame)
+        box.addLayout(row);layout.addWidget(self.control_panel)
 
-        self.build_start_guide(layout)
-        frame,box=panel();box.setContentsMargins(18,9,18,9);box.setSpacing(6)
-        self.overview_sources={};self.source_actions=[]
-        for title,name,connect,callback in (
-            ('iPhone','gaze','Connect iPhone',self.activate_phone),
-            ('Microphone','voice','Turn on microphone',self.c.toggle_microphone),
-        ):
-            if self.overview_sources:box.addWidget(rule())
-            row=QHBoxLayout();row.setSpacing(11)
-            lamp=Lamp(title);row.addWidget(lamp)
-            column=QVBoxLayout();column.setSpacing(1)
-            heading=label(title,'heading',True);column.addWidget(heading)
-            value=label('Off','muted',True);column.addWidget(value)
-            row.addLayout(column,1)
-            actions=QWidget();buttons=QHBoxLayout(actions)
-            buttons.setContentsMargins(0,0,0,0);buttons.setSpacing(11)
-            button=QPushButton(connect);button.clicked.connect(callback);buttons.addWidget(button)
-            if name=='gaze':
-                self.gaze_heading=heading
-                self.phone_settings_button=QPushButton('Connection settings')
-                self.phone_settings_button.clicked.connect(self.open_phone_settings)
-                buttons.addWidget(self.phone_settings_button);self.phone_settings_button.hide()
-                self.use_wifi_button=QPushButton('Use Wi‑Fi instead')
-                self.use_wifi_button.clicked.connect(self.use_wifi)
-                buttons.addWidget(self.use_wifi_button);self.use_wifi_button.hide()
-            self.source_actions.append(actions);row.addWidget(actions)
-            box.addLayout(row);self.overview_sources[name]=lamp
-            setattr(self,name+'_value',value);setattr(self,name+'_btn',button)
-        layout.addWidget(frame)
+        self.more_controls = QPushButton('More controls')
+        self.more_controls.setObjectName('advanced')
+        layout.addWidget(self.more_controls, 0, Qt.AlignLeft)
+        controls = QWidget()
+        details = QVBoxLayout(controls)
+        details.setContentsMargins(0, 0, 0, 0)
+        connect_disclosure(self.more_controls, controls)
+        self.more_controls.toggled.connect(self.refresh_control_panel)
+        layout.addWidget(controls)
+        frame, box = panel()
+        row = QHBoxLayout()
+        self.voice_lamp = Lamp('Microphone')
+        row.addWidget(self.voice_lamp)
+        column = QVBoxLayout()
+        column.addWidget(label('Microphone', 'heading'))
+        self.voice_value = label('Off', 'muted', True)
+        column.addWidget(self.voice_value)
+        row.addLayout(column, 1)
+        self.voice_btn = QPushButton('Turn on microphone')
+        self.voice_btn.clicked.connect(self.c.toggle_microphone)
+        row.addWidget(self.voice_btn)
+        box.addLayout(row)
+        details.addWidget(frame)
 
         self.scene_map_button=QPushButton('Show screen map')
         self.scene_map_button.clicked.connect(lambda:self.update_setting(
             'show_scene_map', not self.settings.get('show_scene_map',False)))
-        layout.addWidget(self.scene_map_button,0,Qt.AlignLeft)
+        details.addWidget(self.scene_map_button,0,Qt.AlignLeft)
         self.focus_panel=QFrame();self.focus_panel.setObjectName('mapPanel')
         self.focus_panel.setMaximumHeight(350)
         box=QVBoxLayout(self.focus_panel)
@@ -435,38 +416,43 @@ class Window(QMainWindow):
         action_legend.addWidget(swatch('#F5CD69'));action_legend.addWidget(label('Yellow frame · current focus','railMuted'))
         legend.addLayout(action_legend);legend.addStretch()
         self.latency=label('','railMuted');legend.addWidget(self.latency)
-        box.addWidget(legend_strip);layout.addWidget(self.focus_panel,1)
+        box.addWidget(legend_strip);details.addWidget(self.focus_panel)
         layout.addStretch()
 
-    def build_start_guide(self, layout):
-        self.start_guide,box=panel();box.setContentsMargins(18,10,18,10);box.setSpacing(6)
-        header=QHBoxLayout()
-        header.addWidget(label('Get started','heading'),1)
-        self.hide_guide_button=QPushButton('Hide guide');self.hide_guide_button.setObjectName('link')
-        self.hide_guide_button.clicked.connect(self.hide_guide);header.addWidget(self.hide_guide_button)
-        box.addLayout(header)
-        self.guide_steps=[]
-        self.guide_check=QIcon(str(ASSETS/'check.svg')).pixmap(14,14)
-        steps=(
-            ('Start Mira on your iPhone',GUIDE_PHONE_HINT,'Find iPhone',
-             lambda:self.start_phone_search(from_guide=True)),
-            ('Teach Mira your eyes · about a minute','','Set up',self.open_setup),
-            ('Connect iPhone','Set up first','Connect iPhone',self.c.toggle_phone),
-            ('Watch the highlight follow your gaze','Look around the practice area.','Open Practice',self.open_practice),
-        )
-        for number,(title,hint,action,callback) in enumerate(steps,1):
-            box.addWidget(rule())
-            row=QHBoxLayout();row.setSpacing(10)
-            mark=label(str(number),'step');mark.setFixedSize(22,22);mark.setAlignment(Qt.AlignCenter)
-            row.addWidget(mark)
-            copy=QVBoxLayout();copy.setSpacing(0)
-            copy.addWidget(label(title,wrap=True))
-            note=label(hint,'muted',True);note.setVisible(bool(hint));copy.addWidget(note)
-            row.addLayout(copy,1)
-            button=QPushButton(action);button.clicked.connect(callback);row.addWidget(button)
-            self.guide_steps.append((mark,note,button))
-            box.addLayout(row)
-        layout.addWidget(self.start_guide)
+    def build_phone_card(self, layout):
+        frame, box = panel()
+        box.setContentsMargins(22, 18, 22, 18)
+        self.gaze_heading = label('iPhone gaze tracking', 'heading', True)
+        self.gaze_value = label('', 'muted', True)
+        box.addWidget(self.gaze_heading)
+        box.addWidget(self.gaze_value)
+
+        row = QHBoxLayout()
+        self.gaze_btn = QPushButton('Set up iPhone')
+        self.gaze_btn.setObjectName('primary')
+        self.gaze_btn.clicked.connect(self.activate_phone)
+        row.addWidget(self.gaze_btn)
+        self.mouse_preview = QPushButton('Try with mouse')
+        self.mouse_preview.clicked.connect(self.open_mouse_preview)
+        row.addWidget(self.mouse_preview)
+        self.disconnect_phone = QPushButton('Disconnect iPhone')
+        self.disconnect_phone.clicked.connect(self.c.toggle_phone)
+        row.addWidget(self.disconnect_phone)
+        row.addStretch()
+        box.addLayout(row)
+
+        links = QHBoxLayout()
+        self.phone_settings_button = QPushButton('Connection settings')
+        self.phone_settings_button.setObjectName('link')
+        self.phone_settings_button.clicked.connect(self.open_phone_settings)
+        links.addWidget(self.phone_settings_button)
+        self.use_wifi_button = QPushButton('Use Wi‑Fi instead')
+        self.use_wifi_button.setObjectName('link')
+        self.use_wifi_button.clicked.connect(self.use_wifi)
+        links.addWidget(self.use_wifi_button)
+        links.addStretch()
+        box.addLayout(links)
+        layout.addWidget(frame)
 
     def build_profile(self):
         layout=self.page('Profile','Setup creates your gaze profile. Click learning can refine it.')
@@ -532,14 +518,14 @@ class Window(QMainWindow):
         layout.addWidget(label('Run setup again if you move your iPhone or monitor. Mira doesn’t automatically save video or audio.','muted',True));layout.addStretch()
 
     def build_practice(self):
-        layout = self.page('Practice', 'Look between targets and watch the highlight follow your gaze.')
+        layout = self.page('Practice', 'See how Mira highlights a button as you look at it or move your mouse.')
         row = QHBoxLayout()
         row.setSpacing(12)
-        self.practice_button = QPushButton('Track gaze here')
+        self.practice_button = QPushButton('Connect iPhone')
         self.practice_button.setObjectName('primary')
         self.practice_button.clicked.connect(self.toggle_practice)
         row.addWidget(self.practice_button)
-        self.pointer = QCheckBox('Test with mouse')
+        self.pointer = QCheckBox('Try with mouse')
         self.pointer.toggled.connect(self.toggle_pointer)
         row.addWidget(self.pointer)
         row.addStretch()
@@ -583,26 +569,33 @@ class Window(QMainWindow):
         feedback.addWidget(self.practice_result, 1)
         layout.addLayout(feedback)
 
-        fields = QGridLayout()
-        fields.setHorizontalSpacing(12)
-        fields.setVerticalSpacing(4)
-        fields.setColumnStretch(0, 1)
-        fields.setColumnStretch(1, 1)
-        self.editor = QLineEdit()
-        self.editor.setAccessibleName('Dictation field')
-        dictation = label('Dictation')
-        dictation.setBuddy(self.editor)
-        fields.addWidget(dictation, 0, 0)
-        fields.addWidget(self.editor, 1, 0)
         self.practice_command = QLineEdit()
         self.practice_command.setAccessibleName('Type a command')
         self.practice_command.setPlaceholderText('click Plus')
         self.practice_command.returnPressed.connect(self.submit)
-        command = label('Command')
+        command = label('Type a command')
         command.setBuddy(self.practice_command)
-        fields.addWidget(command, 0, 1)
-        fields.addWidget(self.practice_command, 1, 1)
-        layout.addLayout(fields)
+        layout.addWidget(command)
+        command_row = QHBoxLayout()
+        command_row.addWidget(self.practice_command, 1)
+        self.run_practice_command = QPushButton('Run command')
+        self.run_practice_command.clicked.connect(self.submit)
+        command_row.addWidget(self.run_practice_command)
+        layout.addLayout(command_row)
+
+        self.practice_tools_button = QPushButton('More practice tools')
+        self.practice_tools_button.setObjectName('advanced')
+        layout.addWidget(self.practice_tools_button, 0, Qt.AlignLeft)
+        tools = QWidget()
+        fields = QVBoxLayout(tools)
+        fields.setContentsMargins(0, 0, 0, 0)
+        fields.setSpacing(4)
+        self.editor = QLineEdit()
+        self.editor.setAccessibleName('Dictation field')
+        dictation = label('Dictation')
+        dictation.setBuddy(self.editor)
+        fields.addWidget(dictation)
+        fields.addWidget(self.editor)
 
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
@@ -610,7 +603,9 @@ class Window(QMainWindow):
         self.log.setMaximumBlockCount(150)
         self.log.setFixedHeight(66)
         self.log.setPlaceholderText('Activity')
-        layout.addWidget(self.log)
+        fields.addWidget(self.log)
+        layout.addWidget(tools)
+        connect_disclosure(self.practice_tools_button, tools)
 
     def build_settings(self):
         layout=self.page('Settings','Gaze tracking, highlights, and optional actions.')
@@ -733,8 +728,11 @@ class Window(QMainWindow):
         except (OSError,ValueError,RuntimeError) as exc:self.add_message('Setup',str(exc))
 
     def setup_adopted(self):
-        self._profile_stamp=None;self.navigate(1);self.last_paint=0;self.refresh()
-        self.add_message('Profile','Gaze setup and check results saved. Connect iPhone to refine gaze with clicks.')
+        self._profile_stamp = None
+        self.navigate(0)
+        self.last_paint = 0
+        self.refresh()
+        self.gaze_btn.setFocus()
 
     def update_setting(self,key,value):
         if key=='highlight_mode' and (self.c.busy or self.c.output_pending):
@@ -767,10 +765,18 @@ class Window(QMainWindow):
         except (OSError,ValueError,RuntimeError) as exc:self.add_message('iPhone',str(exc))
 
     def activate_phone(self):
-        if self.c.phone_needs_setup:
+        if self.phone_setup_needed():
             self.open_setup()
+        elif self.c.phone and self.c.phone.worker and self.c.phone.worker.is_alive():
+            self.open_gaze_practice()
         else:
             self.c.toggle_phone()
+
+    def phone_setup_needed(self):
+        return self.c.phone_needs_setup or (
+            self.c.phone is None and not self.c.phone_error
+            and not self._profile_status.get('available')
+        )
 
     def use_wifi(self):
         self.cancel_phone_search()
@@ -800,26 +806,20 @@ class Window(QMainWindow):
     def show_phone_search_status(self, message):
         self.phone_find_status.setText(message)
         self.phone_find_status.setVisible(bool(message))
-        if self._guide_search:
-            self._guide_search_status=message
 
     def cancel_phone_search(self):
         if self._phone_search is not None:
             self._phone_search.set()
             self._phone_search = None
-        self._guide_search=False
-        self._guide_search_status=''
         self.find_phone.setEnabled(True)
         self.show_phone_search_status('')
 
-    def start_phone_search(self, *, from_guide=False):
-        if self._phone_search is not None or (not from_guide and self.phone_transport.currentData() != 'wifi'):
+    def start_phone_search(self):
+        if self._phone_search is not None or self.phone_transport.currentData() != 'wifi':
             return
         stop = self._phone_search = threading.Event()
-        self._guide_search=from_guide
         self.find_phone.setEnabled(False)
         self.show_phone_search_status('Looking for iPhone on your Wi‑Fi…')
-        self.last_paint=0;self.refresh()
 
         def search():
             try:
@@ -841,19 +841,15 @@ class Window(QMainWindow):
         elif not hosts:
             self.show_phone_search_status(WIFI_PHONE_NEXT_STEP)
         else:
-            self._phone_found=True
             host=hosts[0]
             message=f'Found iPhone at {host}'
-            # The guide can look for a phone without changing an existing USB choice.
-            if not self._guide_search or self.settings['phone_transport']=='wifi':
-                self.phone_host.setText(host)
-                try:
-                    self.c.save_found_phone(host)
-                except (OSError, ValueError, RuntimeError) as exc:
-                    message+=' · use “Save connection” to save the address'
-                    self.add_message('iPhone', str(exc))
+            self.phone_host.setText(host)
+            try:
+                self.c.save_found_phone(host)
+            except (OSError, ValueError, RuntimeError) as exc:
+                message+=' · use “Save connection” to save the address'
+                self.add_message('iPhone', str(exc))
             self.show_phone_search_status(message)
-        self._guide_search=False
         self.last_paint=0;self.refresh()
 
     def find_webcams(self):
@@ -956,25 +952,68 @@ class Window(QMainWindow):
         self.settings.update(updated);self.add_message('Settings','Saved. The microphone setting applies the next time you turn it on.')
 
     def navigate(self,index):
+        if index != 2 and self.practice_active:
+            self.stop_practice()
         self.stack.setCurrentIndex(index)
         for i,b in enumerate(self.nav):b.setChecked(i==index)
-        if index!=2 and self.practice_active:self.toggle_practice()
 
-    def open_practice(self):
+    def open_gaze_practice(self):
         self.navigate(2)
-        if not self.practice_active:self.toggle_practice()
+        self.start_practice(use_mouse=False)
+
+    def open_mouse_preview(self):
+        self.navigate(2)
+        self.start_practice(use_mouse=True)
+
+    def start_practice(self, *, use_mouse):
+        self.practice_active = True
+        with QSignalBlocker(self.pointer):
+            self.pointer.setChecked(use_mouse)
+        self.refresh_practice_button()
+        self.c.set_practice_scope(int(self.winId()), use_mouse=use_mouse)
+        if not self.c.running:
+            self._practice_started_control = True
+            self.c.start()
+
+    def stop_practice(self):
+        self.practice_active = False
+        with QSignalBlocker(self.pointer):
+            self.pointer.setChecked(False)
+        if self._practice_started_control and self.c.running:
+            self.c.pause()
+        self._practice_started_control = False
+        self.c.set_practice_scope(0)
+        self.refresh_practice_button()
+
+    def practice_has_gaze(self):
+        worker = self.c.phone.worker if self.c.phone is not None else None
+        phone_ready = worker and worker.is_alive() and getattr(worker, 'frames', 0) > 0 and not self.c.phone_error
+        webcam = self.c.webcam
+        return bool(phone_ready or (webcam is not None and webcam.active))
+
+    def refresh_practice_button(self):
+        text = 'Stop practice' if self.practice_active else (
+            'Try eye tracking' if self.practice_has_gaze() else 'Connect iPhone')
+        self.practice_button.setText(text)
 
     def toggle_practice(self):
-        self.practice_active=not self.practice_active;self.c.practice_window=int(self.winId()) if self.practice_active else 0
-        self.practice_button.setText('Return to desktop' if self.practice_active else 'Track gaze here')
-        if self.practice_active and not self.c.running:self.c.start()
-        if not self.practice_active:self.pointer.setChecked(False);self.c.pointer_mode=False
-        self.c.scene=None;self.c.fusion.reset()
+        if self.practice_active:
+            self.stop_practice()
+        elif self.practice_has_gaze():
+            self.open_gaze_practice()
+        else:
+            self.navigate(0)
+            if self.gaze_btn.isVisible():
+                self.gaze_btn.setFocus()
 
-    def toggle_pointer(self,value):
-        if value and self.c.phone:self.c.toggle_phone()
-        self.c.pointer_mode=value
-        if value and not self.practice_active:self.toggle_practice()
+    def toggle_pointer(self, value):
+        if value:
+            self.open_mouse_preview()
+        elif self.practice_active:
+            if self.practice_has_gaze():
+                self.open_gaze_practice()
+            else:
+                self.stop_practice()
 
     def practice_action(self,text):
         if text=='Plus':self.counter+=1
@@ -983,8 +1022,13 @@ class Window(QMainWindow):
         self.count.setText(str(self.counter));self.practice_result.setText('Time: '+time.strftime('%H:%M') if text=='Clock' else 'Clicked: '+text)
 
     def submit(self):
-        text=self.practice_command.text()
-        self.practice_command.clear()
+        text = self.practice_command.text().strip()
+        if not text:
+            return
+        if not self.practice_active:
+            self.open_gaze_practice()
+        if self.c.scene is not None:
+            self.practice_command.clear()
         self.c.command(text)
 
     def add_message(self,who,text):
@@ -1022,57 +1066,14 @@ class Window(QMainWindow):
         self.validation_hint.setText(source+('ready to refine with clicks.' if good else
                                      'needs refinement. '+' '.join(report.get('problems', [])[:2])))
 
-    def finish_guide(self):
-        self._guide_save_attempted=True
-        if self.update_setting('first_run_done',True):
-            self.start_guide.hide()
-
-    def hide_guide(self):
-        self.finish_guide()
-        self.last_paint=0;self.refresh()
-
-    def refresh_guide(self, phone_state):
-        if self.settings.get('first_run_done',False):
-            self.start_guide.hide()
-            return
-        self.start_guide.show()
-        c=self.c
-        phone_worker=getattr(c.phone,'worker',None)
-        setup_worker=getattr(self.setup_window,'worker',None)
-        found=any(isinstance(host,str) and bool(host) for host in (
-            getattr(getattr(phone_worker,'connection',None),'found_host',''),
-            getattr(getattr(setup_worker,'connection',None),'found_host',''),
-        ))
-        self._phone_found |= found or phone_state=='go'
-        accepted=bool(self._profile_status.get('available'))
-        connected=phone_state=='go'
-        done=(self._phone_found,accepted,connected,connected and self.practice_active)
-        self._guide_connected |= connected
-        for number,((mark,_,button),complete) in enumerate(zip(self.guide_steps,done),1):
-            if mark.property('done') != complete:
-                mark.setProperty('done',complete)
-                mark.setAccessibleName(f'Step {number}, '+('complete' if complete else 'not complete'))
-                if complete:mark.setPixmap(self.guide_check)
-                else:mark.setText(str(number))
-            button.setVisible(not complete)
-        _,phone_note,find_button=self.guide_steps[0]
-        phone_note.setText(self._guide_search_status or GUIDE_PHONE_HINT)
-        find_button.setEnabled(self._phone_search is None)
-        self.guide_steps[1][2].setEnabled(not c.output_pending)
-        _,connect_note,connect_button=self.guide_steps[2]
-        waiting=phone_state=='standby'
-        connect_button.setVisible(accepted and not connected and not waiting)
-        hint='Set up first' if not accepted else 'Waiting for iPhone…' if waiting else ''
-        connect_note.setText(hint)
-        connect_note.setVisible(bool(hint))
-        self.guide_steps[3][2].setVisible(connected and not done[3])
-        if all(done) and not self._guide_save_attempted:
-            self.finish_guide()
+    def refresh_control_panel(self):
+        self.control_panel.setVisible(self.c.running or self.c.output_pending or self.more_controls.isChecked())
 
     def refresh_sources(self, now):
         c = self.c
         worker = c.phone.worker if c.phone is not None else None
         phone_connected = bool(worker and worker.is_alive())
+        has_frames = isinstance(getattr(worker, 'frames', None), int) and worker.frames > 0
         if c.phone_error or (c.phone is not None and not phone_connected):
             phone_state, phone_word = 'hold', 'Error'
         elif c.phone is None:
@@ -1087,37 +1088,46 @@ class Window(QMainWindow):
         if c.gaze_fps and c.gaze_source_mode != 'webcam':
             gaze_detail += f' · {c.gaze_fps:.0f} Hz'
         transport = self.settings['phone_transport']
-        needs_setup = c.phone_needs_setup
+        needs_setup = self.phone_setup_needed()
         self.gaze_value.setToolTip(gaze_detail)
         if c.webcam is not None:
             self.gaze_value.setToolTip(gaze_detail+'\n'+c.webcam_status)
         connection_error=phone_state=='hold' and not needs_setup
-        self.phone_settings_button.setVisible(connection_error and transport=='wifi')
+        self.phone_settings_button.setVisible(not phone_connected)
         self.use_wifi_button.setVisible(connection_error and transport=='usb')
-        if phone_state == 'hold':
+        self.mouse_preview.setVisible(phone_state != 'go')
+        self.disconnect_phone.setVisible(phone_connected)
+        connecting = phone_state == 'standby' and not has_frames
+        self.disconnect_phone.setText('Cancel connection' if connecting else 'Disconnect iPhone')
+        self.gaze_btn.setVisible(phone_state != 'standby')
+        self.gaze_btn.setEnabled(not needs_setup or not (c.busy or c.output_pending))
+        heading = 'iPhone gaze tracking'
+        if needs_setup:
+            status = ('Set up again for this screen.' if c.phone_needs_setup else
+                      'Requires an iPhone with Face ID and iOS 17 or later.')
+            action = 'Set up iPhone'
+        elif phone_state == 'hold':
             not_found = isinstance(getattr(worker, 'failure', None), WifiPhoneNotFound)
-            self.gaze_heading.setText('Set up your gaze first' if needs_setup else
-                                      'Can’t find iPhone' if not_found else 'Can’t connect to iPhone')
-            if needs_setup:
-                next_step = 'Complete the short gaze setup before connecting iPhone.'
-            elif transport == 'wifi':
-                next_step = WIFI_PHONE_NEXT_STEP
-            else:
-                next_step = 'Unlock iPhone and connect it by USB to a PC it trusts.'
-            self.gaze_value.setText(next_step)
-            self.gaze_btn.setText('Set up' if needs_setup else 'Try again')
+            heading = 'Can’t find iPhone' if not_found else 'Can’t connect to iPhone'
+            status = (WIFI_PHONE_NEXT_STEP if transport == 'wifi' else
+                      'Unlock iPhone and connect it by USB to a PC it trusts.')
+            action = 'Try again'
+        elif phone_state == 'go':
+            status = 'Connected over Wi‑Fi' if transport == 'wifi' else 'Connected by USB'
+            action = 'Open Practice'
+        elif phone_state == 'standby':
+            status = 'Looking for iPhone…' if transport == 'wifi' else 'Connecting by USB…'
+            if has_frames:
+                status = 'Waiting for your gaze. Face the iPhone camera.'
+            action = 'Open Practice'
         else:
-            self.gaze_heading.setText('iPhone')
-            if phone_state=='go' or (phone_connected and isinstance(getattr(worker,'frames',None),int) and worker.frames>0):
-                status = 'Connected · Wi‑Fi' if transport=='wifi' else 'Connected · USB'
-            elif phone_state=='standby':
-                status = 'Looking for iPhone…' if transport=='wifi' else 'Connecting by USB…'
-            else:
-                status = 'Off'
-            if c.gaze_source_mode=='webcam':
-                status += ' · using webcam'
-            self.gaze_value.setText(status)
-            self.gaze_btn.setText('Disconnect iPhone' if phone_connected else 'Connect iPhone')
+            status = 'Gaze setup saved. Start tracking in Mira on your iPhone.'
+            action = 'Connect iPhone'
+        if c.gaze_source_mode == 'webcam':
+            status += ' Using webcam.'
+        self.gaze_heading.setText(heading)
+        self.gaze_value.setText(status)
+        self.gaze_btn.setText(action)
 
         voice_word = {'off': 'Off', 'standby': 'Starting', 'go': 'Listening', 'hold': 'Error'}[c.voice_state]
         voice_detail = c.voice_status
@@ -1134,8 +1144,7 @@ class Window(QMainWindow):
             lamp, caption = self.rail_sources[name]
             lamp.set_state(state, word)
             caption.setText(word)
-        self.overview_sources['gaze'].set_state(phone_state, phone_word)
-        self.overview_sources['voice'].set_state(c.voice_state, voice_word)
+        self.voice_lamp.set_state(c.voice_state, voice_word)
         return phone_state
 
     def refresh(self):
@@ -1176,30 +1185,26 @@ class Window(QMainWindow):
         self.legend_gaze.setVisible(not magnetic and self.settings['show_gaze'])
         self.profile_setup.setEnabled(not c.output_pending)
         phone_state=self.refresh_sources(now)
-        self.refresh_guide(phone_state)
-        guide_visible=not self.start_guide.isHidden()
-        for actions in self.source_actions:
-            actions.setVisible(not guide_visible)
-        self.run.setVisible(c.running or not guide_visible or self._guide_connected)
+        self.refresh_control_panel()
+        self.refresh_practice_button()
         self.refresh_learning(phone_state)
         self.run.setText('Pause' if c.running else 'Start')
         target = (current_focus_target(c.scene, c.focus.target, c.attention, now, selected_until)
                   if c.running and not quiet else None)
-        self.cue_lamps['Go'].set_state('go' if c.running else 'off','Live' if c.running else 'Off')
-        self.cue_lamps['Standby'].set_state('standby' if target else 'off','Waiting' if target else 'Off')
         confirmation = c.action_confirmation
         if c.running and confirmation and 0 <= now-confirmation[1] < GO_CONFIRMATION_SECONDS:
-            call = f'Go · {confirmation[0]}'
+            call = confirmation[0]
         else:
-            call = (f'Standby · {target.label[:85] or target.role}' if target else
-                    'Live · look at something' if c.running else 'Paused')
+            call = (f'Looking at {target.label[:85] or target.role}' if target else
+                    'Mira is running' if c.running else 'Paused')
         self.target.setText(call)
         focus_reason='Look at your screen' if c.focus.reason=='Waiting for fresh gaze data' else c.focus.reason
         if target and c.focus.ambiguous:
             focus_reason='Several nearby targets · say “next”' if c.voice_state=='go' else 'Your gaze is near several targets.'
-        self.reason.setText(focus_reason if c.running and not quiet else 'Gaze cues are hidden.' if c.running else
-                            'Finish Get started below.' if guide_visible else
-                            'Connect iPhone or preview the highlight in Practice.')
+        reason = (focus_reason if not quiet and focus_reason != 'Paused' else
+                  'Gaze cues are hidden.' if quiet else '') if c.running else ''
+        self.reason.setText(reason)
+        self.reason.setVisible(bool(reason))
         scene_detail = ''
         if show_map and c.scene and c.running:
             scene_detail = f'{len(c.scene.current_elements(now))} screen elements'

@@ -39,7 +39,7 @@ element map 1.25 s and a scene 3 s. Duplicate, out-of-order and invalid frames
 do not count as new data, and a missing sample clears the live gaze point.
 
 `Controller.attention` is the point used to select an element. It is the
-active gaze source, or the mouse pointer while **Test with mouse** is on or
+active gaze source, or the mouse pointer while **Try with mouse** is on or
 Shift is held.
 
 Pausing raises the controller's generation and action epoch before it stops

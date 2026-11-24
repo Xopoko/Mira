@@ -29,7 +29,7 @@ GAZE_STOPS = (('Top left', 640), ('Plus', 640), ('Top right', 400), ('Clock', 40
 def prepare_practice(window):
     # Enter the real Practice mode without starting the live screen provider.
     window.c.running = True
-    window.open_practice()
+    window.open_gaze_practice()
     page = window.stack.currentWidget().widget()
     stage = window.practice_buttons['Plus'].parentWidget()
     layout = page.layout()

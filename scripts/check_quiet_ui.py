@@ -37,7 +37,7 @@ with tempfile.TemporaryDirectory() as folder, \
      patch.object(Window,'refresh_profile'), \
      patch('context_operator.ui.window.time.monotonic',return_value=10.1):
     c=Controller(dict(DEFAULTS,vision=False,ranker=False,click_learning=True,anticipation=True,
-                      game_gaze_enabled=True,dwell_enabled=True,show_scene_map=True,first_run_done=True))
+                      game_gaze_enabled=True,dwell_enabled=True,show_scene_map=True))
     c.timer.stop();window=Window(c);window.refresh_timer.stop();window.show()
     bounds=Rect(0,0,800,600)
     win=Mock();win.rect.return_value=bounds;win.u.GetWindowLongW.return_value=0

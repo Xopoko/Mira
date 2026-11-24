@@ -48,9 +48,9 @@ class SpeechMicrophoneTest(unittest.TestCase):
             fresh = settings.load()
             self.assertEqual(fresh['microphone'], '')
             path = Path(directory) / 'settings.json'
-            path.write_text(json.dumps({'microphone': 'Saved mic'}), encoding='utf-8')
+            path.write_text(json.dumps({'microphone': 'Saved mic', 'first_run_done': True}), encoding='utf-8')
             legacy = settings.load()
-            settings.save(dict(legacy, first_run_done=True))
+            settings.save(legacy)
             self.assertEqual(settings.load()['microphone'], 'Saved mic')
 
         with patch('context_operator.providers.models.subprocess.Popen') as launch, \

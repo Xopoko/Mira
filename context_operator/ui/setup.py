@@ -183,10 +183,10 @@ class SetupWindow(QMainWindow):
             self.worker = None
         return True
 
-    def _ready(self):
+    def _ready(self, sample=None):
         if self.worker is None:
             return False
-        s = self.worker.latest()
+        s = self.worker.latest() if sample is None else sample
         try:
             x = np.asarray(s.features, dtype=float)
             origins = np.asarray(s.eye_origins, dtype=float)
@@ -339,6 +339,9 @@ class SetupWindow(QMainWindow):
 
     def refresh(self):
         phase = self.session.phase
+        sample = self.worker.latest() if self.worker is not None else None
+        ready = self._ready(sample)
+        connection_error = False
         if self.error:
             message = self.error
         elif phase == 'result' and self.session.report:
@@ -354,15 +357,25 @@ class SetupWindow(QMainWindow):
                        'Profile ready to check on five new points.' if self.candidate else
                        'Setup points saved. Mira will rebuild the profile and start the check again.')
         elif self.running:
-            message = (self.session.hold_reason or 'Keep looking at the center of the point until the ring fills.' if self._ready() else
-                       (self.worker.latest().error or self.worker.latest().reason or 'Waiting for iPhone'))
+            if ready:
+                message = self.session.hold_reason or 'Keep looking at the center of the point until the ring fills.'
+            else:
+                message = (sample.error or sample.reason if sample else '') or 'Waiting for iPhone'
+        elif ready:
+            message = 'iPhone ready. Start when you’re comfortable.'
+        elif sample is not None and sample.error:
+            connection_error = True
+            message = sample.error
+            if self.c.settings.get('phone_transport') == 'wifi':
+                message += ' To enter the address manually, close setup and open Connection settings.'
+        elif sample is not None:
+            message = sample.reason or 'Connecting to iPhone…'
         else:
-            message = ('iPhone ready. Start when you’re comfortable.' if self._ready() else
-                       'Connect iPhone and start tracking in Mira on your phone.')
-        if not self.running and self._ready() and phase in ('train', 'check', 'fit'):
-            message = self.session.distance_hint(self.worker.latest()) or message
+            message = 'Open Mira on your iPhone and tap Start Tracking, then connect it here.'
+        if not self.running and ready and phase in ('train', 'check', 'fit'):
+            message = self.session.distance_hint(sample) or message
         self.status.setText(message)
-        self.status.setStyleSheet('color:' + ('#E5483B' if self.error else '#A6A6A0'))
+        self.status.setStyleSheet('color:' + ('#E5483B' if self.error or connection_error else '#A6A6A0'))
         self.guide.setVisible(not self.running)
         self.guide_stats.setVisible(phase == 'result' and bool(self.session.report))
         if phase == 'result' and self.session.report:
@@ -405,14 +418,14 @@ class SetupWindow(QMainWindow):
                                   'Rebuild gaze setup' if phase == 'fit' else
                                   'Start setup' if phase == 'train' else 'Continue check')
         self.begin_button.setVisible(not self.running and (phase != 'result' or refit or retry_save))
-        self.begin_button.setEnabled(((self._ready() and not self.session.distance_hint(self.worker.latest()))
+        self.begin_button.setEnabled(((ready and not self.session.distance_hint(sample))
                                       or refit or retry_save or phase == 'fit' and self.candidate is None)
                                      and not (self.fit_worker and self.fit_worker.is_alive()))
         self.retry_button.setVisible(not self.running and (phase == 'result' or self.error != '' or phase == 'fit'))
         self.apply_button.setVisible(self._can_adopt())
         self.connect_button.setVisible(not self.running)
         self.cancel_button.setVisible(not self.running)
-        show_hud = not self.running or not self._ready()
+        show_hud = not self.running or not ready
         for item in (self.heading, self.status, self.count):
             item.setVisible(show_hud)
         self._size_guide()

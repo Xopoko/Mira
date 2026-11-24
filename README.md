@@ -41,20 +41,23 @@ Mira’s Windows overlay following simulated gaze samples.
 
 ## Try gaze tracking
 
-1. [Install the companion](phone/README.md) on a TrueDepth iPhone running
-   iOS 17 or later. Place it below the screen facing you, then tap
-   **Start Tracking**.
-2. Put the iPhone and PC on the same trusted network. In the Windows app,
-   open **Overview** and select **Find iPhone**. See the
-   [Wi-Fi guide](docs/phone-wifi.md) for manual connection.
-3. Select **Set up**. In the setup window, select **Connect iPhone**, then
-   **Start setup**. Look at each of the nine targets and press **Space** when
-   its ring fills. Select **Check on new points**, do the same for five more
-   targets, then select **Use gaze setup** if offered.
-4. Back in **Overview**, select **Connect iPhone**, then **Open Practice**.
-   In the default **Follow gaze** mode, the dot and nearby contours move as
-   you look around. Choose **Return to desktop** to try the overlay in other
-   apps. **Ctrl+Alt+F12** pauses tracking.
+On Windows, choose **Try with mouse** in **Overview** to see how the
+highlight moves before you connect an iPhone.
+
+1. Install Mira on a TrueDepth iPhone running iOS 17 or later. Put the iPhone
+   and PC on the same trusted network. Place the phone below the screen
+   facing you, then tap **Start Tracking**. [iPhone installation](phone/README.md)
+2. In **Overview** on Windows, select **Set up iPhone**, then **Connect iPhone**.
+   Mira looks for your phone automatically over Wi-Fi. If it can’t find it,
+   close setup and select **Connection settings** in **Overview**.
+   [Manual connection](docs/phone-wifi.md#enter-the-address-manually)
+3. Select **Start setup**. Look at each of the nine targets and press **Space**
+   when its ring fills. Select **Check on new points**, do the same for five
+   more targets, then select **Use gaze setup** if offered.
+4. Back in **Overview**, select **Connect iPhone**. Once gaze tracking is
+   live, select **Open Practice**. In the default **Follow gaze** mode, the
+   dot and nearby contours move as you look around. Choose **Stop practice**
+   to try the overlay in other apps. **Ctrl+Alt+F12** pauses tracking.
 
 Mira is most useful for broad areas such as panels and large controls.
 In **Profile → Details**, the setup check shows **Typical error** (median)
@@ -62,10 +65,9 @@ and **Hard points** (90th percentile) in physical screen pixels. The check uses 
 were held out of calibration. Repeat setup if you move the phone or monitor
 or change where you sit.
 
-You can preview the contours with **Practice → Test with mouse**. A
-[calibrated webcam](docs/webcam.md) can take over briefly when the iPhone
-loses track. [Local voice commands](docs/models.md) and dwell activation
-are optional.
+A [calibrated webcam](docs/webcam.md) can take over briefly when the
+iPhone loses track. [Local voice commands](docs/models.md) and dwell
+activation are optional.
 
 ## How it works
 
