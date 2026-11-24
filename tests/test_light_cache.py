@@ -41,7 +41,7 @@ class CacheTests(unittest.TestCase):
                 self.assertGreater(image.pixelColor(round(x*dpr),round(30*dpr)).alpha(),100)
             self.assertEqual(image.pixelColor(0,0).alpha(),0)
     def test_damage_clears_old_light_and_separate_prediction_at_negative_origin(self):
-        prediction=SimpleNamespace(target=Element('p','','Button',Rect(350,100,50,30)))
+        prediction=Anticipation(Element('p','','Button',Rect(350,100,50,30)),10,10,1.)
         old=ink_region(QPointF(-850,100),100,None,(-1000,0),.5)
         new=ink_region(QPointF(-500,100),100,prediction,(-1000,0),.5)
         dirty=old.united(new)
@@ -60,7 +60,7 @@ class CacheTests(unittest.TestCase):
         self.assertEqual(frame(10.2,hidden).pixelColor(120,70).alpha(),0)
     def test_idle_prediction_expiry_clears_once_then_stops_repainting(self):
         from PySide6.QtGui import QRegion
-        forecast=SimpleNamespace(target=Element('p','','Button',Rect(100,100,60,30)),motion_at=10)
+        forecast=Anticipation(Element('p','','Button',Rect(100,100,60,30)),10,10,1.)
         win=Mock();win.rect.return_value=Rect(0,0,1000,700)
         state=SimpleNamespace(attention=None,center=None,previous=None,energy=0.,last_tick=10,prediction=forecast,
                               highlight_mode='radial',scene=None,focus_target=None,selected_until=0.,

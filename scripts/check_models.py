@@ -18,7 +18,7 @@ def main():
     LOCAL.mkdir(exist_ok=True)
     report={};elements=(Element('plus','Plus','Button',Rect(60,80,210,80)),Element('minus','Minus','Button',Rect(310,80,210,80)),Element('field','Dictation field','Edit',Rect(60,210,460,65)))
     scene=Scene(1,time.monotonic(),Rect(0,0,600,350),elements,title='Model test scene')
-    focus=Focus(elements[0],(),False,'Test',1)
+    focus=Focus(elements[0],(),False,'Test')
     image=Image.new('RGB',(600,350),'#142034');draw=ImageDraw.Draw(image)
     font=ImageFont.truetype('C:/Windows/Fonts/segoeui.ttf',28)
     for el in elements:

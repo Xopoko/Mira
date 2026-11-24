@@ -78,8 +78,6 @@ class InferenceWorker(threading.Thread):
         self.error = ''
         self.observation = WebcamObservation(0, 0., reason='Starting webcam tracking')
         self.child_lock = threading.Lock()
-        self.completed_at = 0.
-        self.inference_ms = None
         self.inference_times = deque(maxlen=30)
 
     def submit(self, frame):
@@ -122,7 +120,6 @@ class InferenceWorker(threading.Thread):
                     continue
                 if time.monotonic() - captured >= .20:
                     continue
-                inference_started = time.monotonic()
                 child.stdin.write(HEADER.pack(b'WCF1', seq, captured, width, height))
                 child.stdin.write(pixels)
                 child.stdin.flush()
@@ -130,8 +127,6 @@ class InferenceWorker(threading.Thread):
                 completed = time.monotonic()
                 if not self.stop_event.is_set():
                     self.observation = observation
-                    self.completed_at = completed
-                    self.inference_ms = (completed - inference_started) * 1000.0
                     self.inference_times.append(completed)
         except Exception as exc:
             if not self.stop_event.is_set():
@@ -192,8 +187,6 @@ class WebcamGaze(QObject):
         self.frame_clock = None
         self.last_media_time = None
         self.last_frame = 0.
-        self.last_frame_width = 0
-        self.last_frame_height = 0
         self.preview_image = None
         self.preview_captured = 0.
         self.preview_updated_at = 0.
@@ -243,7 +236,6 @@ class WebcamGaze(QObject):
         self.seq = self.last_seq = 0
         self.frame_clock = self.last_media_time = None
         self.last_frame = 0.
-        self.last_frame_width = self.last_frame_height = 0
         self._clear_preview()
         self.preview_updated_at = 0.
         self.invalid_after = 0.
@@ -284,43 +276,15 @@ class WebcamGaze(QObject):
         self.preview_image = None
         self.preview_captured = 0.
 
-    def diagnostics(self, now=None):
-        """Return current numeric capture/inference health without image data."""
-        now = time.monotonic() if now is None else now
+    def diagnostics(self):
         worker = self.worker
-        observation = getattr(worker, 'observation', None)
-        completed_value = getattr(worker, 'completed_at', 0.)
-        completed_at = (float(completed_value)
-                        if type(completed_value) in (float, int)
-                        and math.isfinite(completed_value) else 0.)
         inference_times = getattr(worker, 'inference_times', ())
         processed_fps = 0.0
         if isinstance(inference_times, (tuple, list, deque)) and len(inference_times) >= 2:
             elapsed = inference_times[-1] - inference_times[0]
             if elapsed > 0:
                 processed_fps = (len(inference_times) - 1) / elapsed
-        state = ('error' if self.error or getattr(worker, 'error', '') else
-                 'running' if self.active and getattr(worker, 'ready', False) else
-                 'loading' if self.active else 'stopped')
-        captured_value = getattr(observation, 'captured', 0.)
-        captured = (float(captured_value)
-                    if type(captured_value) in (float, int)
-                    and math.isfinite(captured_value) else 0.)
-        return {
-            'state': state,
-            'status': self.error or getattr(worker, 'error', '') or
-                      getattr(observation, 'reason', ''),
-            'last_frame_age': max(0.0, now - self.last_frame) if self.last_frame else None,
-            'inference_age': max(0.0, now - completed_at) if completed_at else None,
-            'observation_age': max(0.0, now - captured) if captured else None,
-            'processed_fps': float(processed_fps),
-            'capture_width': int(self.last_frame_width),
-            'capture_height': int(self.last_frame_height),
-            'inference_ms': (float(worker.inference_ms)
-                             if worker is not None
-                             and type(getattr(worker, 'inference_ms', None)) in (float, int)
-                             and math.isfinite(worker.inference_ms) else None),
-        }
+        return {'processed_fps': float(processed_fps)}
 
     def _frame(self, frame):
         if not self.active or not self.worker or not self.worker.ready:
@@ -358,7 +322,6 @@ class WebcamGaze(QObject):
             image = image.scaled(1280, 720, Qt.KeepAspectRatio, Qt.FastTransformation)
         image = image.convertToFormat(QImage.Format_RGB888)
         width, height = image.width(), image.height()
-        self.last_frame_width, self.last_frame_height = width, height
         raw = bytes(image.constBits())
         stride = image.bytesPerLine()
         pixels = b''.join(raw[row*stride:row*stride+width*3] for row in range(height))

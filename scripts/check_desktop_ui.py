@@ -19,7 +19,7 @@ from context_operator.settings import DEFAULTS, LOCAL, load
 from context_operator.ui.window import Window
 from context_operator.ui.setup import SetupWindow
 from context_operator.personalization import ProfileStore
-from context_operator.providers.gaze import Sample
+from context_operator.foundations.gaze.arkit import Sample
 import numpy as np
 
 app=QApplication.instance() or QApplication([])
@@ -245,7 +245,6 @@ with tempfile.TemporaryDirectory() as folder, \
     assert load()['first_run_done'] and window.start_guide.isHidden()
     assert window.run.isVisible() and window.gaze_btn.isVisible() and window.voice_btn.isVisible()
 results['first_run_verdict_and_saved_map']='passed'
-(out/'ui-check.json').write_text(json.dumps(results,ensure_ascii=False,indent=2),encoding='utf-8')
 window.close()
 with tempfile.TemporaryDirectory() as folder:
     root=Path(folder)

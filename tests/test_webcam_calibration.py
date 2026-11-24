@@ -2,6 +2,7 @@ import json
 from dataclasses import replace
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import numpy as np
@@ -74,6 +75,19 @@ class WebcamProfileTests(unittest.TestCase):
             self.assertEqual(recovered.device_id, 'camera-1')
             with self.assertRaises(ValueError):
                 store.load(BOUNDS, 'camera-2')
+
+    def test_adopt_fails_without_replacing_valid_profile_if_backup_cannot_move(self):
+        profile, report = fitted_profile()
+        with tempfile.TemporaryDirectory() as folder:
+            store = WebcamProfileStore(folder)
+            store.adopt(profile, report)
+            before = store.path.read_bytes()
+            with patch('context_operator.personalization.webcam.os.replace',
+                       side_effect=[PermissionError('backup blocked'), None]) as move:
+                with self.assertRaisesRegex(PermissionError, 'backup blocked'):
+                    store.adopt(profile, report)
+            move.assert_called_once_with(store.path, store.backup_path)
+            self.assertEqual(store.path.read_bytes(), before)
 
     def test_store_rejects_validation_scalar_that_disagrees_with_check_data(self):
         profile, report = fitted_profile()
@@ -198,7 +212,7 @@ class WebcamSessionTests(unittest.TestCase):
         stamp = 10 * .08
         session.feed(WebcamObservation(10, stamp, tuple(spike)), stamp)
         self.assertFalse(session.ready)
-        self.assertEqual(session.collection_state, 'outliers')
+        self.assertEqual(session.excluded_count, 1)
         stamp += .08
         session.feed(WebcamObservation(11, stamp, feature), stamp)
         self.assertTrue(session.ready, session.hold_reason)
@@ -247,7 +261,6 @@ class WebcamSessionTests(unittest.TestCase):
             session.feed(WebcamObservation(i, stamp, tuple(row)), stamp)
         self.assertFalse(session.ready)
         self.assertLess(session.sample_count, 10)
-        self.assertEqual(session.collection_state, 'moving')
         self.assertIn('after moving', session.hold_reason)
 
     def test_out_of_order_frame_clears_current_fixation(self):

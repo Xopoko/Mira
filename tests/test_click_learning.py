@@ -27,6 +27,7 @@ class FakeClicks:
     def start(self):self.started=True
     def stop(self):self.started=False;self.events=[]
     def drain(self):events,self.events=self.events,[];return events
+    def drain_motion(self):return []
 
 class ClickInputTests(unittest.TestCase):
     def test_physical_click_preserves_down_point_and_time(self):
@@ -45,39 +46,39 @@ class ClickInputTests(unittest.TestCase):
     def test_match_uses_pre_press_features_not_post_click_look(self):
         h=ClickHistory();before=sample(9.94);middle=sample(9.98);latest=sample(10.00);after=sample(10.03,head=5)
         for item in (before,middle,latest,after):h.observe(item,10.04)
-        self.assertIs(h.before(HumanClick(30,18,10.01,10.12),10.13),latest)
+        self.assertIs(h.match(HumanClick(30,18,10.01,10.12),10.13).sample,latest)
 
     def test_blink_stale_future_and_delayed_events_do_not_teach(self):
         h=ClickHistory();h.observe(sample(9.94),10);h.observe(sample(9.98),10);h.observe(None,10.04)
-        self.assertIsNone(h.before(HumanClick(25,15,10.06,10.12),10.13))
+        self.assertIsNone(h.match(HumanClick(25,15,10.06,10.12),10.13))
         h.clear();h.observe(sample(11),10)
-        self.assertIsNone(h.before(HumanClick(25,15,10,10.1),10.12))
+        self.assertIsNone(h.match(HumanClick(25,15,10,10.1),10.12))
         h.clear();h.observe(sample(10),10)
-        self.assertIsNone(h.before(HumanClick(25,15,10.2,10.3),10.31))
-        self.assertIsNone(h.before(HumanClick(25,15,10.03,10.1),11))
+        self.assertIsNone(h.match(HumanClick(25,15,10.2,10.3),10.31))
+        self.assertIsNone(h.match(HumanClick(25,15,10.03,10.1),11))
 
     def test_source_timed_blink_before_press_blocks_but_after_press_does_not(self):
         h=ClickHistory();s=sample(9.98);h.observe(sample(9.94),10);h.observe(s,10)
         h.observe(None,10.05,missing_at=10)
-        self.assertIsNone(h.before(HumanClick(25,15,10.02,10.08),10.10))
+        self.assertIsNone(h.match(HumanClick(25,15,10.02,10.08),10.10))
         h.clear();h.observe(sample(9.90),10);h.observe(sample(9.94),10);h.observe(s,10);h.observe(None,10.05,missing_at=10.03)
-        self.assertIs(h.before(HumanClick(25,15,10.02,10.08),10.10),s)
+        self.assertIs(h.match(HumanClick(25,15,10.02,10.08),10.10).sample,s)
 
     def test_far_click_is_not_treated_as_gaze_ground_truth(self):
         h=ClickHistory()
         for stamp in (9.92,9.96,10.00):h.observe(sample(stamp),10.02)
-        self.assertIsNone(h.before(HumanClick(25,600,10.01,10.1),10.12,Rect(0,0,1000,700)))
+        self.assertIsNone(h.match(HumanClick(25,600,10.01,10.1),10.12,Rect(0,0,1000,700)))
         self.assertIn('far from your gaze',h.last_rejection)
 
     def test_duplicate_samples_unsupported_gaze_and_moving_fixation_are_rejected(self):
         h=ClickHistory();s=sample(9.94);h.observe(s,10);h.observe(s,10);h.observe(sample(10),10)
-        self.assertIsNone(h.before(HumanClick(25,15,10.01,10.1),10.12))
+        self.assertIsNone(h.match(HumanClick(25,15,10.01,10.1),10.12))
         h.clear()
         for stamp in (9.92,9.96,10.00):h.observe(sample(stamp,supported=False),10.02)
-        self.assertIsNone(h.before(HumanClick(25,15,10.01,10.1),10.12))
+        self.assertIsNone(h.match(HumanClick(25,15,10.01,10.1),10.12))
         h.clear()
         for stamp,point in ((9.92,(0,0)),(9.96,(100,100)),(10.00,(0,0))):h.observe(sample(stamp,point=point),10.02)
-        self.assertIsNone(h.before(HumanClick(25,15,10.01,10.1),10.12))
+        self.assertIsNone(h.match(HumanClick(25,15,10.01,10.1),10.12))
 
     def test_short_prepress_fixation_survives_eye_departure_but_not_opposite_departure(self):
         h=ClickHistory()
@@ -222,7 +223,7 @@ class ClickControllerTests(unittest.TestCase):
         self.c.running=True;self.c.win=Mock();self.c.win.emergency.return_value=False;self.c.win.shift_down.return_value=False
         self.c.learning=GazeLearning(Path(self.temp.name)/'learning.json')
         self.c.learning.bind('profile',Rect(0,0,1000,700),np.ones(22))
-        self.c.phone=Mock();self.c.scene=None;self.c.output=Mock()
+        self.c.phone=Mock(invalid_captured=None,validation_radius=230.);self.c.scene=None;self.c.output=Mock()
     def tearDown(self):self.c.close();self.temp.cleanup()
     def tick(self,now,s):
         self.c.phone.measurement=s;self.c.phone.poll.return_value=(Gaze(25,12,now),'ready',60)
@@ -241,6 +242,22 @@ class ClickControllerTests(unittest.TestCase):
         self.tick(10.12,sample(10.11))
         self.assertEqual(self.c.learning.count,0)
         self.assertIn('far from your gaze',self.c.click_status)
+    def test_rejected_correction_reports_learning_reason_and_counts(self):
+        for now,stamp in ((9.94,9.92),(9.98,9.96),(10.01,9.99)):self.tick(now,sample(stamp))
+        click=HumanClick(30,18,10.02,10.1)
+        with patch.object(self.c.learning,'learn_click',return_value=False):
+            for result,reason,counts in (
+                ('conflict','it disagrees with earlier clicks here',(0,1)),
+                ('away','too far from the corrected gaze',(1,1)),
+                ('invalid','the gaze reading wasn’t usable',(1,2)),
+            ):
+                with self.subTest(result=result):
+                    self.c.learning.last_click_result=result
+                    self.c._learn_clicks(sample(10.11),10.12,[click])
+                    self.assertEqual(self.c.click_status,'Click skipped · '+reason)
+                    self.assertEqual((self.c.click_counts['away'],self.c.click_counts['quality']),counts)
+        self.assertEqual(self.c.click_counts['accepted'],0)
+
     def test_disabled_and_pause_discard_events_and_pre_click_history(self):
         self.tick(10,sample(9.98));self.source.events=[HumanClick(25,72,10.01,10.1)]
         self.c.settings['click_learning']=False;self.tick(10.12,sample(10.11));self.assertEqual(self.c.learning.count,0)

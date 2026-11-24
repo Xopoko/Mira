@@ -172,14 +172,13 @@ class PerceptionClient:
                 pass
 
 
-def verified_models(include_derived=True):
+def verified_models():
     manifest = json.loads((SOURCE / 'perception-models.json').read_text(encoding='utf-8'))
     paths = {}
     for asset in manifest['assets']:
         paths.update({ROOT / 'models' / asset['directory'] / name: digest for name, digest in asset['files'].items()}
                      if 'directory' in asset else {ROOT / 'models' / asset['name']: asset['sha256']})
-    if include_derived:
-        paths.update({ROOT / 'models' / asset['name']: asset['sha256'] for asset in manifest['derived'].values()})
+    paths.update({ROOT / 'models' / asset['name']: asset['sha256'] for asset in manifest['derived'].values()})
     for path, expected in paths.items():
         try:
             with path.open('rb') as stream:

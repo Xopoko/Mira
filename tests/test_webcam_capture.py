@@ -100,15 +100,6 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(provider.preview_captured,0.)
         provider.stop()
 
-    def test_diagnostics_are_read_only_numeric_and_report_resolution(self):
-        with patch('context_operator.providers.webcam.time.monotonic',return_value=10.):
-            self.provider._frame(self.frame(1_000_000,320,240))
-            details=self.provider.diagnostics(now=10.25)
-        self.assertEqual(details['capture_width'],320)
-        self.assertEqual(details['capture_height'],240)
-        self.assertEqual(details['last_frame_age'],0.25)
-        self.assertIsNone(details['inference_ms'])
-
     def test_duplicate_frame_does_not_make_new_observation(self):
         with patch('context_operator.providers.webcam.time.monotonic',return_value=10.):
             self.provider._frame(self.frame(100))

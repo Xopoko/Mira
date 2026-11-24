@@ -5,7 +5,8 @@ import numpy as np
 
 from context_operator.core.contracts import Rect
 from context_operator.foundations.gaze.smoothing import Smoother
-from context_operator.providers.gaze import PhoneGaze,Sample
+from context_operator.providers.gaze import PhoneGaze
+from context_operator.foundations.gaze.arkit import Sample
 from context_operator.providers.phone_connection import PhoneConnection
 
 

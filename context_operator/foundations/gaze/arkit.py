@@ -2,17 +2,14 @@
 from dataclasses import dataclass
 import importlib.util
 import json
-import math
 import os
 from pathlib import Path
 import socket
 import threading
 import time
 import numpy as np
-from .geometry import head_angles
 
 ENGINE_VERSION = 'arkit-truedepth-v1'
-PORT = 39471
 
 
 def open_usb_stream():
@@ -45,8 +42,6 @@ class ARObservation:
     age_ms: float
     features: object = None
     blink: bool = False
-    pose: tuple = (0., 0., 0.)
-    depth: bool = False
     reason: str = 'TrueDepth can’t see your face'
     eye_origins: tuple = ()
 
@@ -88,7 +83,7 @@ class PacketDecoder:
         if timestamp <= self.last_timestamp:
             raise ValueError('Phone clock went backwards')
         self.session, self.last_seq, self.last_timestamp = session, seq, timestamp
-        result = ARObservation(seq, timestamp, age, depth=packet.get('depthFrame') is True)
+        result = ARObservation(seq, timestamp, age)
         if age > 150:
             result.reason = 'iPhone data is out of date'
             return result
@@ -102,7 +97,6 @@ class PacketDecoder:
         if blink.shape != (2,) or look.shape != (3,) or not np.isfinite(np.r_[blink,look]).all() or np.any((blink<0)|(blink>1)):
             raise ValueError('Invalid gaze data')
         r = face[:3,:3]
-        result.pose = head_angles(face)
         result.blink = bool(blink.max() > .6)
         if result.blink:
             result.reason = 'Blink detected'
@@ -126,21 +120,32 @@ class PacketDecoder:
         return result
 
 
+@dataclass
+class Sample:
+    seq:int=0
+    captured:float=0.
+    features:object=None
+    blink:bool=False
+    error:str=''
+    fps:float=0.
+    reason:str=''
+    source_age_ms:float=0.
+    read_wait_ms:float=0.
+    eye_origins:tuple=()
+
+
 class ARKitWorker(threading.Thread):
-    def __init__(self, sample_factory, port=None, connection=None):
+    def __init__(self, port=None, connection=None):
         super().__init__(daemon=True, name='arkit-numeric')
         if port is not None and connection is not None:
             raise ValueError('Choose a fixture port or a phone connection')
-        self.Sample = sample_factory
         self.port = port
         self.connection = connection
         self.stop_event = threading.Event()
         self.lock = threading.Lock()
-        self.sample = sample_factory()
+        self.sample = Sample()
         self.failure = None
-        self.frames = self.faces = 0
-        self.depth_frames = 0
-        self.negotiated = {'transport':'wifi-lan' if connection is not None and connection.transport=='wifi' else 'apple-usbmux-usb','video_received':False}
+        self.frames = 0
 
     def latest(self):
         with self.lock:
@@ -150,7 +155,6 @@ class ARKitWorker(threading.Thread):
         decoder = PacketDecoder()
         sock = None
         previous = None
-        last_depth = float('-inf')
         buffer = b''
         started = time.monotonic()
         try:
@@ -193,29 +197,23 @@ class ARKitWorker(threading.Thread):
                     self.stop_event.wait(.005)
                     continue
                 age = observation.age_ms/1000 + round_trip  # Full RTT, using Windows' precise clock.
-                if observation.depth:
-                    last_depth = now
-                    self.depth_frames += 1
                 fps = (1/(observation.timestamp-previous) if previous is not None else 0)
                 previous = observation.timestamp
                 self.frames += 1
-                self.faces += int(observation.features is not None)
-                sample = self.Sample(seq=observation.seq,captured=now-age,features=observation.features,
-                    blink=observation.blink,pose=observation.pose,reason=observation.reason,fps=fps,
-                    source='arkit',depth_available=observation.depth,source_age_ms=age*1000,
-                    depth_recent=now-last_depth<=1., read_wait_ms=round_trip*1000,
-                    eye_origins=observation.eye_origins,
-                    )
+                sample = Sample(seq=observation.seq,captured=now-age,features=observation.features,
+                    blink=observation.blink,reason=observation.reason,fps=fps,
+                    source_age_ms=age*1000,read_wait_ms=round_trip*1000,
+                    eye_origins=observation.eye_origins)
                 with self.lock:
                     self.sample = sample
                 self.stop_event.wait(.005)
         except TimeoutError:
             with self.lock:
-                self.sample = self.Sample(source='arkit',error='iPhone didn’t respond in time. Check the connection and reconnect.')
+                self.sample = Sample(error='iPhone didn’t respond in time. Check the connection and reconnect.')
         except Exception as exc:
             with self.lock:
                 self.failure = exc
-                self.sample = self.Sample(source='arkit',error=f'iPhone: {exc}')
+                self.sample = Sample(error=f'iPhone: {exc}')
         finally:
             if sock is not None:
                 sock.close()

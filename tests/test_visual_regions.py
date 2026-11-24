@@ -32,6 +32,7 @@ class RegionTests(unittest.TestCase):
     def test_busy_inference_keeps_verified_region_and_owner_epoch_isolation(self):
         release=threading.Event();entered=threading.Event();stopped=threading.Event();calls=[];response=self.result
         class Client:
+            child=None
             def ready(self,stop):pass
             def observe(self,image,stop):
                 calls.append(1)

@@ -20,7 +20,14 @@ class SelectionTests(unittest.TestCase):
         self.assertIsNone(self.fusion.choose(self.scene,None,100.1).target)
         self.assertIsNone(self.fusion.choose(self.scene,Gaze(440,230,99),100).target)
     def test_expired_scene_and_future_sample(self):
-        self.assertIsNone(self.fusion.choose(self.scene,Gaze(440,230,104),104).target)
+        for magnetic in (False,True):
+            for now in (99.,100.+SCENE_TTL,104.):
+                with self.subTest(magnetic=magnetic,now=now):
+                    self.fusion.choose(self.scene,Gaze(440,230,100),100,magnetic=magnetic)
+                    focus=self.fusion.choose(self.scene,Gaze(440,230,now),now,magnetic=magnetic)
+                    self.assertEqual(focus.reason,'Updating the screen map')
+                    self.assertIsNone(focus.target)
+                    self.assertIsNone(self.fusion.current)
         self.assertIsNone(self.fusion.choose(self.scene,Gaze(440,230,101),100).target)
     def test_text_preselection_keeps_a_named_target_away_from_gaze(self):
         focus=self.fusion.choose(self.scene,Gaze(440,230,100),100,'Clock')

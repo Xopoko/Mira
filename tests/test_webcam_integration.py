@@ -130,6 +130,8 @@ class FakeWebcam:
         self.device_id = device_id
         self.gazes = iter(gazes)
         self.stopped = False
+        self.active = True
+        self.failed = Mock()
 
     def start(self):
         pass

@@ -14,6 +14,9 @@ class HumanClick:
     window: int = 0
     pid: int = 0
 
+    def is_fresh(self,now):
+        return 0<=now-self.released<.35 and 0<=self.released-self.pressed<=1.5
+
 
 @dataclass(frozen=True)
 class PointerMotion:
@@ -27,10 +30,8 @@ class PointerMotion:
 @dataclass(frozen=True)
 class ClickMatch:
     sample: GazeMeasurement
-    center: tuple[float, float]
     distance: float
     limit: float
-    dispersion: float
     weight: float
 
 
@@ -64,7 +65,7 @@ class ClickHistory:
 
     def match(self,click,now,bounds=None,radius=230.):
         self.last_rejection='';self.last_rejection_code=''
-        if not (0<=now-click.released<.35 and 0<=click.released-click.pressed<=1.5):
+        if not click.is_fresh(now):
             return self._reject('stale','the click arrived too late')
         eligible=[(stamp,sample) for stamp,sample in self.samples if stamp<=click.pressed]
         barriers=[stamp for stamp,sample in eligible if sample is None]
@@ -115,8 +116,4 @@ class ClickHistory:
         # Use the observed sample nearest the robust fixation center.
         sample=min(stable,key=lambda item:(math.dist(item[1].point,center),-item[0]))[1]
         weight=max(.15,1-.75*distance/limit)*max(.25,1-dispersion/100)
-        return ClickMatch(sample,center,distance,limit,dispersion,weight)
-
-    def before(self,click,now,bounds=None):
-        match=self.match(click,now,bounds)
-        return match.sample if match else None
+        return ClickMatch(sample,distance,limit,weight)

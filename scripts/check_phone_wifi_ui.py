@@ -24,7 +24,7 @@ c=Controller(dict(DEFAULTS,vision=False,ranker=False,anticipation=False,phone_tr
 c.timer.stop()
 failure=WifiPhoneNotFound()
 c.phone=SimpleNamespace(worker=Mock(failure=failure,is_alive=lambda:False),stop=Mock())
-c.running=True;c.gaze_status=f'iPhone: {failure}';c.modules['screen']='Updating'
+c.running=True;c.gaze_status=f'iPhone: {failure}'
 w=Window(c);w.refresh_timer.stop();w.show();app.processEvents()
 review=Path('.impeccable/review');review.mkdir(parents=True,exist_ok=True)
 assert w.gaze_heading.text()=='Can’t find iPhone'

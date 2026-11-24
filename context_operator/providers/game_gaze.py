@@ -74,9 +74,9 @@ def pack_packet(sequence, captured_s, published_s, gaze_x=0.0, gaze_y=0.0,
 
 def eligible_gaze(gaze, measurement, desktop, now, *, phone_present,
                   pointer_mode=False, mouse_control=False,
-                  training=False, setup=False, running=True):
+                  setup=False, running=True):
     """Return whether this frame is eligible for export from the real gaze source."""
-    if (not running or not phone_present or pointer_mode or mouse_control or training or setup):
+    if (not running or not phone_present or pointer_mode or mouse_control or setup):
         return False
     if not isinstance(gaze, Gaze) or not isinstance(measurement, GazeMeasurement):
         return False
@@ -169,12 +169,14 @@ class GameGazePublisher:
     def _last_error(self, operation):
         return OSError(self._ctypes.get_last_error(), operation)
 
-    def _publish(self, packet):
+    def _publish(self, packet, timeout=0):
         if self._mapping is None or self._lock is None:
+            raise RuntimeError("game gaze mapping is closed")
+        wait = self._kernel32.WaitForSingleObject(self._lock, timeout)
+        if wait == 0x102:  # WAIT_TIMEOUT
             return False
-        wait = self._kernel32.WaitForSingleObject(self._lock, 0)
         if wait not in (0, 0x80):
-            return False
+            raise self._last_error("WaitForSingleObject(lock)")
         try:
             self._mapping.seek(0)
             self._mapping.write(packet)
@@ -185,22 +187,24 @@ class GameGazePublisher:
 
     def publish(self, gaze, measurement, desktop, now, *, phone_present,
                 pointer_mode=False, mouse_control=False,
-                training=False, setup=False, running=True):
+                setup=False, running=True):
         active = eligible_gaze(gaze, measurement, desktop, now,
                                phone_present=phone_present,
                                pointer_mode=pointer_mode,
                                mouse_control=mouse_control,
-                               training=training, setup=setup, running=running)
+                               setup=setup, running=running)
         if active:
             packet = pack_packet(self._sequence + 1, gaze.captured, now,
                                  gaze.x, gaze.y, desktop, gaze.radius, active=True)
         else:
             packet = pack_packet(self._sequence + 1, 0.0, now, active=False)
-        return self._publish(packet)
+        if not self._publish(packet):
+            return 'busy'
+        return 'active' if active else 'inactive'
 
     def publish_inactive(self, now=None):
         now = time.monotonic() if now is None else now
-        return self._publish(pack_packet(self._sequence + 1, 0.0, now, active=False))
+        return self._publish(pack_packet(self._sequence + 1, 0.0, now, active=False), timeout=100)
 
     def close(self):
         """Revoke the last value, close handles, and release the writer lease."""

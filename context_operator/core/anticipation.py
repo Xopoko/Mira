@@ -17,19 +17,14 @@ class Anticipation:
     motion_at: float
     strength: float
     source: str = 'mouse'
-    valid_until: float | None = None
 
     def __post_init__(self):
         if self.source not in ('mouse','gaze'):
             raise ValueError('Unknown anticipation source')
-        if self.valid_until is None:
-            ttl=.18 if self.source=='mouse' else .32
-            object.__setattr__(self,'valid_until',self.motion_at+ttl)
 
     @property
-    def evidence_at(self):
-        """Timestamp of the physical evidence; motion_at remains the legacy name."""
-        return self.motion_at
+    def valid_until(self):
+        return self.motion_at+(.18 if self.source=='mouse' else .32)
 
     def is_fresh(self,now):
         return (math.isfinite(now) and math.isfinite(self.captured) and math.isfinite(self.motion_at)
@@ -136,10 +131,6 @@ class IntentPredictor:
         self.scenes.append((now,scene))
 
     @staticmethod
-    def identity(element):
-        return (element.window,element.pid,element.id,element.rect,element.role,element.label,element.source)
-
-    @staticmethod
     def eligible(element,scene,owner):
         r=element.rect;b=scene.bounds
         return (element.enabled and (element.window,element.pid)==owner and r.w>0 and r.h>0
@@ -205,14 +196,14 @@ class IntentPredictor:
         if self.gaze_trail:
             last=self.gaze_trail[-1]
             if gaze.captured==last['at']:
-                if self.identity(target)==last['identity']:return self._stable_gaze(now)
+                if target.identity==last['identity']:return self._stable_gaze(now)
                 self.gaze_trail.clear();self.gaze_pending=None;return None
             if gaze.captured<last['at']:
                 self.gaze_trail.clear();self.gaze_pending=None;return None
-            if gaze.captured-last['at']>.16 or self.identity(target)!=last['identity']:
+            if gaze.captured-last['at']>.16 or target.identity!=last['identity']:
                 self.gaze_trail.clear();self.gaze_pending=None
         self.gaze_trail.append(dict(at=gaze.captured,x=gaze.x,y=gaze.y,radius=gaze.radius,
-                                    identity=self.identity(target),target=target))
+                                    identity=target.identity,target=target))
         while self.gaze_trail and gaze.captured-self.gaze_trail[0]['at']>.32:self.gaze_trail.popleft()
         if self.gaze_trail and math.dist((gaze.x,gaze.y),(self.gaze_trail[0]['x'],self.gaze_trail[0]['y']))>self.GAZE_SPREAD:
             latest=self.gaze_trail[-1];self.gaze_trail.clear();self.gaze_trail.append(latest);self.gaze_pending=None
@@ -222,7 +213,6 @@ class IntentPredictor:
         if len(self.gaze_trail)<3:return None
         first,last=self.gaze_trail[0],self.gaze_trail[-1]
         if not 0<=now-last['at']<self.GAZE_MAX_AGE or last['at']-first['at']<self.GAZE_DWELL:return None
-        if any(item['identity']!=last['identity'] for item in self.gaze_trail):return None
         return last
 
     def _gaze_features(self,e,gaze,scene,role):
@@ -252,7 +242,7 @@ class IntentPredictor:
         x=x[ids];elements=tuple(elements[i] for i in ids)
         scores=self.gaze_model.scores(x);order=np.argsort(scores);best=int(order[-1]);target=elements[best]
         margin=scores[best]-scores[order[-2]];shape=softmax(scores)
-        identity=self.identity(target)
+        identity=target.identity
         if identity!=self.gaze_pending:self.gaze_pending=identity;self.gaze_since=now
         shown=bool(shape[best]>=.3 and margin>=.30 and now-self.gaze_since>=.06)
         if shown:self.current=Anticipation(target,now,fixation['at'],float(min(1.,.45+margin*.2)),source='gaze')
@@ -317,7 +307,7 @@ class IntentPredictor:
 
     def feedback(self,click,now):
         """Evaluate the old forecast first. Only then consume the click as a label."""
-        if not 0<=now-click.released<.35 or not 0<=click.released-click.pressed<=1.5:return False
+        if not click.is_fresh(now):return False
         candidates=[s for s in self.snapshots if 0<click.pressed-s['at']<=1.25
                     and (s['elements'][0].window,s['elements'][0].pid)==(click.window,click.pid)]
         self.snapshots.clear();self.current=None
@@ -334,7 +324,7 @@ class IntentPredictor:
 
         def label_for(snapshot):
             if target is None:return None
-            return next((i for i,e in enumerate(snapshot['elements']) if self.identity(e)==self.identity(target)),None)
+            return next((i for i,e in enumerate(snapshot['elements']) if e.identity==target.identity),None)
 
         def train_channel(channel,model,snapshots):
             channel_rows=[s for s in snapshots if s['channel']==channel]

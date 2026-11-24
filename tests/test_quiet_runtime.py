@@ -73,6 +73,7 @@ class InMemoryGamePublisher:
             active=active,
         )
         self.packets.append(packet)
+        return 'active' if active else 'inactive'
 
     def close(self):
         self.closed = True
@@ -149,7 +150,6 @@ class QuietRuntimeTests(unittest.TestCase):
         state.game_gaze_factory = lambda: publisher
         state.game_gaze_publisher = None
         state.game_gaze_unavailable = False
-        state.module = type('Signals', (), {'emit': Mock()})()
         state.phone = type('Phone', (), {'measurement': stale_sample})()
         state.gaze = Gaze(25, 12, 9.70, 230.0)
         state.pointer_mode = False

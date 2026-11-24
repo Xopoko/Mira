@@ -288,7 +288,7 @@ class SceneCanvas(QWidget):
 
 
 class Window(QMainWindow):
-    phone_search_finished = Signal(object, object)
+    phone_search_finished = Signal(object, object, object)
     microphone_list_finished = Signal(object)
 
     def __init__(self,controller):
@@ -823,20 +823,22 @@ class Window(QMainWindow):
 
         def search():
             try:
-                hosts = find_phones(stop_event=stop)
-            except (OSError, RuntimeError, ValueError):
-                hosts = []
+                hosts, error = find_phones(stop_event=stop), None
+            except Exception as exc:
+                hosts, error = [], str(exc) or type(exc).__name__
             if not stop.is_set():
-                self.phone_search_finished.emit(stop, hosts)
+                self.phone_search_finished.emit(stop, hosts, error)
 
         threading.Thread(target=search, name='iphone-search', daemon=True).start()
 
-    def finish_phone_search(self, stop, hosts):
+    def finish_phone_search(self, stop, hosts, error):
         if stop is not self._phone_search:
             return
         self._phone_search = None
         self.find_phone.setEnabled(True)
-        if not hosts:
+        if error is not None:
+            self.show_phone_search_status('Couldn’t search for iPhone: ' + error)
+        elif not hosts:
             self.show_phone_search_status(WIFI_PHONE_NEXT_STEP)
         else:
             self._phone_found=True

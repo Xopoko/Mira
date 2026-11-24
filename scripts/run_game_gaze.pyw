@@ -27,7 +27,7 @@ VK_F12 = 0x7B
 class GameGazeWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle('Mira · KCD2 gaze')
+        self.setWindowTitle('Mira · Gaze runner')
         self.setWindowFlags(Qt.Window | Qt.WindowCloseButtonHint | Qt.WindowMinimizeButtonHint)
         self.setFixedWidth(350)
         self.session = None
@@ -134,7 +134,7 @@ class GameGazeWindow(QWidget):
 def main():
     ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
     app = QApplication(sys.argv)
-    app.setApplicationName('Mira · KCD2 gaze')
+    app.setApplicationName('Mira · Gaze runner')
     app.setQuitOnLastWindowClosed(True)
     window = GameGazeWindow()
     window.show()

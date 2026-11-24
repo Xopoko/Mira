@@ -5,7 +5,7 @@ import hashlib
 import threading
 import time
 from PySide6.QtCore import QObject, Signal, QTimer
-from .core.contracts import Focus, Gaze, GazeMeasurement, Element, Rect, Intent, InputEvent, InputSource, TARGET_ACTIONS
+from .core.contracts import Focus, Gaze, GazeMeasurement, Element, Rect, Intent, TARGET_ACTIONS
 from .core.fusion import Fusion
 from .core.webcam import GazeArbitrator
 from .core.commands import quick_intent
@@ -30,17 +30,14 @@ class Controller(QObject):
     received_speech=Signal(object,int)
     received_decision=Signal(object,object,int,float,int)
     failed=Signal(str,int)
-    module=Signal(str,str)
-    received_input=Signal(str,object,int)
     received_output=Signal(object,object,str,int,float)
 
-    def __init__(self,settings,*,output=None,screen_factory=ScreenProvider,model_factory=ContextModel,input_sources=None,click_source=None,game_gaze_factory=None,webcam_factory=None):
+    def __init__(self,settings,*,output=None,screen_factory=ScreenProvider,model_factory=ContextModel,click_source=None,game_gaze_factory=None,webcam_factory=None):
         super().__init__()
         self.settings=settings;self.win=Windows();self.output=output or WindowsOutput()
         self.screen_factory=screen_factory;self.model_factory=model_factory
-        self.input_sources=dict(input_sources or {});self.active_sources={};self.source_counter=0
-        self.source_gaze: tuple[str,Gaze] | None = None
         self.game_gaze_factory=game_gaze_factory;self.game_gaze_publisher=None;self.game_gaze_unavailable=False
+        self.game_gaze_retry_at=0.
         self.webcam_factory=webcam_factory;self.webcam=None;self.webcam_status='Webcam off'
         self.gaze_arbitrator=GazeArbitrator();self.gaze_source_mode='none'
         self.gaze_source_epoch=0;self.revoked_utterances=set()
@@ -59,7 +56,6 @@ class Controller(QObject):
         self.click_history=ClickHistory();self.click_status='Connect iPhone to learn from clicks'
         self.click_counts={'seen':0,'accepted':0,'away':0,'quality':0}
         self.anticipation=IntentLearning(LOCAL/'intent-prediction.json');self.prediction=None
-        self.command_route='';self.interpret_ms=0.
         self.history=deque(maxlen=6)
         self.vision_elements=();self.vision_at=0.
         self.vision_sources={}
@@ -69,8 +65,7 @@ class Controller(QObject):
         self.phone_error='';self.phone_needs_setup=False
         self._reported_wifi_connection=None
         self.voice_status='Off';self.voice_state='off';self.voice_fallback=''
-        self.modules={'screen':'Off','ocr':'On demand','model':'On demand'}
-        self.last_action='No actions yet';self.last_transcript='';self.action_ms=0.
+        self.last_action='No actions yet';self.last_transcript=''
         self.action_confirmation: tuple[str, float] | None = None
         self.speech_focus={};self.dwell_id=None;self.dwell_since=0.;self.dwell_fired=None
         self.received_scene.connect(self._scene)
@@ -78,12 +73,9 @@ class Controller(QObject):
         self.received_speech.connect(self._speech)
         self.received_decision.connect(self._decision)
         self.failed.connect(self._failure)
-        self.module.connect(self._module)
-        self.received_input.connect(self._input)
         self.received_output.connect(self._output)
         self.timer=QTimer(self);self.timer.timeout.connect(self.tick);self.timer.start(25)
 
-    def _module(self,name,state):self.modules[name]=state;self.changed.emit()
     def _failure(self,error,generation):
         if generation!=self.generation:return
         self.busy=self.output_pending;self.status=error;self.message.emit('Notice',error);self.changed.emit()
@@ -95,7 +87,7 @@ class Controller(QObject):
         self.running=True;self.generation+=1;generation=self.generation
         self._start_clicks()
         self.scene_stop=threading.Event();stop=self.scene_stop
-        self.status='Recognizing screen elements';self.module.emit('screen','Updating')
+        self.status='Recognizing screen elements'
         def scan():
             import uiautomation as auto
             provider=None
@@ -112,7 +104,7 @@ class Controller(QObject):
             except Exception as exc:
                 self.failed.emit('Screen map: '+str(exc),generation)
             finally:
-                if provider and hasattr(provider,'close'):provider.close()
+                if provider is not None:provider.close()
                 if self.scene_provider is provider:self.scene_provider=None
         threading.Thread(target=scan,daemon=True,name='screen-perception').start()
         if self.settings['vision']:self._start_vision(stop,generation)
@@ -145,17 +137,19 @@ class Controller(QObject):
 
     def _start_vision(self,stop,generation):
         def perceive():
-            from .foundations.perception.runtime import PerceptionClient
-            from .providers.visual_cache import VisualCache
-            from .providers.visual_regions import verified,crop
-            self.module.emit('ocr','Loading text and icon recognition')
-            cache=VisualCache(stop,PerceptionClient,lambda status:self.module.emit('ocr',status))
+            def unavailable(reason):
+                if not stop.is_set():self.message.emit('Screen recognition','Unavailable: '+reason)
+            cache=None
             try:
+                from .foundations.perception.runtime import PerceptionClient
+                from .providers.visual_cache import VisualCache
+                from .providers.visual_regions import verified,crop
+                cache=VisualCache(stop,PerceptionClient,unavailable)
                 while not stop.wait(.1):
                     scene=self.scene;provider=self.scene_provider
                     if scene is None or provider is None:continue
                     region=None;gaze=self.attention
-                    if hasattr(provider,'vision_scene'):scene=provider.vision_scene(scene,gaze,time.monotonic())
+                    scene=provider.vision_scene(scene,gaze,time.monotonic())
                     if scene is None:continue
                     if gaze and 0<=time.monotonic()-gaze.captured<.25:
                         region=Rect(round(gaze.x/160)*160-480,round(gaze.y/160)*160-320,960,640)
@@ -182,8 +176,9 @@ class Controller(QObject):
                         elements.append(Element(identity,item.label or 'Icon','Text' if item.source=='ocr' else 'Icon',r,scene.window,item.source,True,window.pid if window else self.win.pid(scene.window),digest,verified_at))
                     if not stop.is_set():self.received_vision.emit((scene,verified_at,tuple(elements),epoch),generation)
             except Exception as exc:
-                if not stop.is_set():self.module.emit('ocr','Unavailable: '+str(exc)[:110])
-            finally:cache.close()
+                unavailable(str(exc) or type(exc).__name__)
+            finally:
+                if cache is not None:cache.close()
         threading.Thread(target=perceive,daemon=True,name='visual-perception').start()
 
     def pause(self):
@@ -196,8 +191,6 @@ class Controller(QObject):
         self.anticipation.reset();self.prediction=None
         self.click_status='Click learning is paused'
         self.attention=None;self.mouse_control=False
-        for name in list(self.active_sources):self.disable_source(name)
-        self.source_gaze=None
         self.focus=Focus(reason='Paused');self.fusion.reset()
         self.vision_elements=();self.scene=None
         self.dwell_id=self.dwell_fired=None
@@ -211,7 +204,7 @@ class Controller(QObject):
             except Exception as exc:self.message.emit('Gaze setup','Couldn’t close setup: '+str(exc))
         self.gaze=None;self.gaze_source_mode='none';self.gaze_status='Off';self.gaze_fps=0;self.phone_error='';self.phone_needs_setup=False
         self._reported_wifi_connection=None
-        self.status='Paused';self.modules['screen']='Off';self.changed.emit()
+        self.status='Paused';self.changed.emit()
 
     def toggle_phone(self):
         phone=self.phone
@@ -297,8 +290,7 @@ class Controller(QObject):
                 from .providers.webcam import WebcamGaze
                 self.webcam_factory=WebcamGaze
             webcam=self.webcam_factory(self.win.bounds(),self.settings.get('webcam_device_id',''))
-            connect_failure=getattr(getattr(webcam,'failed',None),'connect',None)
-            if callable(connect_failure):connect_failure(self._webcam_failed)
+            webcam.failed.connect(self._webcam_failed)
             webcam.start();self.webcam=webcam
             self.gaze_arbitrator.reset();self.webcam_status='Connecting to webcam'
             if not self.running:self.start()
@@ -317,11 +309,10 @@ class Controller(QObject):
                 self._stop_webcam();self.webcam_status='The screen changed. Set up the webcam again.'
             else:
                 secondary,self.webcam_status=self.webcam.poll(now)
-                if getattr(self.webcam,'active',None) is False:
+                if not self.webcam.active:
                     secondary=None
                     self._webcam_failed(self.webcam,self.webcam_status)
-        primary_mode=self.source_gaze[0] if self.phone is None and self.source_gaze else 'iphone'
-        choice=self.gaze_arbitrator.choose(primary,secondary,now,primary_mode=primary_mode)
+        choice=self.gaze_arbitrator.choose(primary,secondary,now)
         # A missing frame clears live gaze without changing the source of latched commands.
         if choice.mode!='none' and choice.mode!=self.gaze_source_mode:
             if self.gaze_source_mode!='none' or choice.mode=='webcam':self._revoke_gaze_target()
@@ -359,14 +350,14 @@ class Controller(QObject):
         self.clicks.stop();self.click_history.clear();self._start_clicks();self.changed.emit()
 
     def _predict_intention(self,events,now):
-        motions=self.clicks.drain_motion() if hasattr(self.clicks,'drain_motion') else []
+        motions=self.clicks.drain_motion()
         self.prediction=None
         if not self.settings.get('anticipation',False):return
         stream=sorted([*motions,*events],key=lambda e:e.captured if isinstance(e,PointerMotion) else e.released)
         for event in stream:
             if isinstance(event,PointerMotion):self.anticipation.observe(event)
             else:self.anticipation.feedback(event,now)
-        measurement=getattr(self.phone,'measurement',None) if self.phone else None
+        measurement=self.phone.measurement if self.phone else None
         supported=(not self.phone or isinstance(measurement,GazeMeasurement) and
                    measurement.supported and 0<=now-measurement.captured<.2)
         self.prediction=self.anticipation.predict(self.scene,self.gaze,now,gaze_supported=supported)
@@ -379,12 +370,11 @@ class Controller(QObject):
                                'Connect iPhone to start learning from clicks' if not self.phone else
                                'Complete the short gaze setup to start click learning')
             self.click_history.clear();return False
-        self.click_history.observe(measurement,now,getattr(self.phone,'invalid_captured',None))
+        self.click_history.observe(measurement,now,self.phone.invalid_captured)
         if self.clicks.error:self.click_status='Can’t read clicks: '+self.clicks.error
         # Gate against the uncorrected source and its real display radius. The
         # click learner and the intention predictor cannot expand their own labels.
-        radius=self.gaze.radius if self.gaze is not None else getattr(self.phone,'validation_radius',self.settings['radius'])
-        if not isinstance(radius,(int,float)) or not 0<radius<10000:radius=self.settings['radius']
+        radius=self.gaze.radius if self.gaze is not None else self.phone.validation_radius
         changed=False
         for click in events:
             self.click_counts['seen']+=1
@@ -398,8 +388,12 @@ class Controller(QObject):
                     self.click_counts['accepted']+=1
                     changed=True;self.click_status='Click used to refine gaze'
                 else:
-                    self.click_counts['quality']+=1
-                    self.click_status='Click skipped · too few matching readings'
+                    result=self.learning.last_click_result
+                    self.click_counts['away' if result=='away' else 'quality']+=1
+                    self.click_status='Click skipped · '+{
+                        'conflict':'it disagrees with earlier clicks here',
+                        'away':'too far from the corrected gaze',
+                    }.get(result,'the gaze reading wasn’t usable')
             except OSError as exc:
                 self.settings['click_learning']=False;self.click_history.clear()
                 if not self.settings.get('anticipation',False):self.clicks.stop()
@@ -440,7 +434,7 @@ class Controller(QObject):
         self.changed.emit()
 
     def _remember_discovered_phone(self, phone):
-        connection = getattr(phone, 'connection', None)
+        connection = phone.connection
         if (not isinstance(connection, PhoneConnection) or connection.transport != 'wifi'
                 or not connection.found_host or self._reported_wifi_connection is connection):
             return
@@ -472,42 +466,6 @@ class Controller(QObject):
             try:close()
             except Exception as exc:self.status='Gaze profile selected. Couldn’t close setup: '+str(exc)
         self.changed.emit()
-
-    def register_source(self,name: str,source: InputSource):
-        if name in self.active_sources:raise ValueError('Stop the source before replacing it')
-        if not hasattr(source,'start') or not hasattr(source,'stop'):raise TypeError('InputSource needs start(emit) and stop()')
-        self.input_sources[name]=source
-
-    def enable_source(self,name):
-        if not self.running:self.start()
-        if name in self.active_sources:return
-        self.source_counter+=1;token=self.source_counter
-        self.active_sources[name]=(self.generation,token)
-        try:self.input_sources[name].start(lambda event:self.received_input.emit(name,event,token))
-        except Exception:
-            self.active_sources.pop(name,None)
-            self._forget_source_gaze(name)
-            raise
-
-    def disable_source(self,name):
-        self.active_sources.pop(name,None)
-        self._forget_source_gaze(name)
-        self.input_sources[name].stop()
-
-    def _forget_source_gaze(self,name):
-        source=f'input:{name}'
-        if self.source_gaze and self.source_gaze[0]==source:
-            self.source_gaze=None
-        if self.gaze_source_mode==source:
-            self._revoke_gaze_target()
-
-    def _input(self,name,event,generation):
-        if not self.running or self.active_sources.get(name)!=(self.generation,generation):return
-        if not isinstance(event,InputEvent) or not 0<=time.monotonic()-event.captured<.5:return
-        if event.kind=='gaze' and isinstance(event.gaze,Gaze):
-            self.source_gaze=(f'input:{name}',event.gaze)
-        elif event.kind=='command' and event.text:self.command(event.text)
-        elif event.kind=='stop':self.pause()
 
     def toggle_microphone(self):
         self.speech_focus.clear();self.revoked_utterances.clear()
@@ -542,9 +500,11 @@ class Controller(QObject):
         if extras:
             scene=replace(scene,elements=scene.elements+tuple(extras),windows=tuple(replace(w,elements=w.elements+tuple(e for e in extras if e.window==w.window)) for w in scene.windows))
         self.scene=scene
-        self.modules['screen']=f'{len(scene.elements)} elements · {len(scene.windows) or 1} windows'
         if self.settings.get('anticipation',False):self.anticipation.observe_scene(scene,time.monotonic())
-        if not self.busy:self.status='Look and speak' if self.gaze else 'Ready · connect iPhone or name an element'
+        if not self.busy:
+            error=self.scene_provider.last_error if self.scene_provider is not None else ''
+            if not scene.elements and error:self.status='Can’t read screen elements ('+error+')'
+            else:self.status='Look and speak' if self.gaze else 'Ready · connect iPhone or name an element'
         self.changed.emit()
 
     def _vision(self,event,generation):
@@ -613,7 +573,7 @@ class Controller(QObject):
 
     def tick(self):
         if self.closed:return
-        if self.win.emergency() and (self.running or self.microphone or self.phone):
+        if self.win.emergency() and (self.running or self.microphone or self.phone or self.setup_close):
             self.pause();self.message.emit('Stop','Capture and control stopped');return
         now=time.monotonic()
         try:self.learning.poll_training()
@@ -628,9 +588,9 @@ class Controller(QObject):
             if phone.worker is not None and not phone.worker.is_alive():
                 if self.gaze_source_mode=='iphone':self._revoke_gaze_target()
                 self.gaze=None;phone=None
-        else:self.gaze=self.source_gaze[1] if self.source_gaze else None
+        else:self.gaze=None
         raw_gaze=self.gaze
-        measurement=getattr(phone,'measurement',None) if phone else None
+        measurement=phone.measurement if phone else None
         click_events=self.clicks.drain()
         self._learn_clicks(measurement,now,click_events)
         if phone:self.gaze=self.learning.correct(raw_gaze,measurement,now,self.settings['radius'])
@@ -664,7 +624,9 @@ class Controller(QObject):
         publisher,self.game_gaze_publisher=self.game_gaze_publisher,None
         if publisher:
             try:publisher.close()
-            except Exception as exc:self.module.emit('game-gaze','Error while closing: '+type(exc).__name__)
+            except Exception as exc:
+                if not self.game_gaze_unavailable:
+                    self.message.emit('Game gaze feed','Unavailable: '+(str(exc) or type(exc).__name__))
 
     def _publish_game_gaze(self,now,*,desktop=None,running=False):
         if not self.settings.get('game_gaze_enabled',False):
@@ -673,23 +635,15 @@ class Controller(QObject):
         if not running:
             self._close_game_gaze()
             return
-        if self.game_gaze_unavailable and now < getattr(self,'game_gaze_retry_at',0.):return
-        if self.game_gaze_publisher is None:
-            try:
+        if self.game_gaze_unavailable and now < self.game_gaze_retry_at:return
+        phone=self.phone
+        try:
+            if self.game_gaze_publisher is None:
                 if self.game_gaze_factory is None:
                     from .providers.game_gaze import GameGazePublisher
                     self.game_gaze_factory=GameGazePublisher
                 self.game_gaze_publisher=self.game_gaze_factory()
-                self.game_gaze_unavailable=False
-                self.module.emit('game-gaze','Gaze data sharing enabled')
-            except Exception as exc:
-                self.game_gaze_unavailable=True
-                self.game_gaze_retry_at=now+2.
-                self.module.emit('game-gaze','Unavailable: '+type(exc).__name__)
-                return
-        phone=self.phone
-        try:
-            self.game_gaze_publisher.publish(
+            result=self.game_gaze_publisher.publish(
                 self.gaze,phone.measurement if phone else None,desktop,now,
                 phone_present=bool(phone),
                 pointer_mode=self.pointer_mode,
@@ -697,10 +651,13 @@ class Controller(QObject):
                 setup=bool(self.setup_close),
                 running=bool(running),
             )
+            if result!='busy':self.game_gaze_unavailable=False
         except Exception as exc:
-            self._close_game_gaze();self.game_gaze_unavailable=True
+            if not self.game_gaze_unavailable:
+                self.message.emit('Game gaze feed','Unavailable: '+(str(exc) or type(exc).__name__))
+            self.game_gaze_unavailable=True
             self.game_gaze_retry_at=now+2.
-            self.module.emit('game-gaze','Unavailable: '+type(exc).__name__)
+            self._close_game_gaze()
 
     def command(self,text,latched=None,latched_gaze=None):
         text=text.strip()
@@ -722,7 +679,6 @@ class Controller(QObject):
             focus=Focus()
         selected=bool(self.fusion.selection_until(focus.target,started,gaze))
         if quick:
-            self.command_route='Quick command';self.interpret_ms=(time.monotonic()-started)*1000
             if quick.action=='select':
                 target=self.fusion.cycle(focus,started,quick.direction)
                 self.status='Selected: '+target.label if target else 'No nearby element';return
@@ -734,12 +690,9 @@ class Controller(QObject):
             self._decision(quick,self.scene,generation,started);return
         if self.settings.get('fast_voice',True):
             intent=self.fast.interpret(text,self.scene,focus,gaze,max_gaze_age=max_gaze_age,allow_selected=selected)
-            self.interpret_ms=(time.monotonic()-started)*1000
             if intent:
-                self.command_route='Local command matching';self.module.emit('model',f'Quick selection · {self.interpret_ms:.1f} ms')
                 self._decision(intent,self.scene,generation,started);return
         self.busy=True;self.status='Matching your command…'
-        self.command_route='Command model'
         scene=self.scene
         ranker = self._ranker_for_command() if self.settings['ranker'] and scene.current_elements(started) else None
         def infer():
@@ -754,13 +707,11 @@ class Controller(QObject):
                         if ranker is self.ranker:
                             self.message.emit('Target matching', str(exc))
                 if generation!=self.generation:return
-                self.module.emit('model','Working on your command…')
                 provider=self.scene_provider;image=None
                 if self.settings['vision'] and provider:
                     capture=provider.capture(scene)
                     if capture:image=capture[0]
                 decision=self.model_factory(self.settings).interpret(text,scene,focus,image,self.history,learned)
-                self.module.emit('model',self.settings['model_name'])
                 self.received_decision.emit(decision,scene,generation,started,source_epoch)
             except Exception as exc:self.failed.emit(str(exc),generation)
         threading.Thread(target=infer,daemon=True,name='context-command').start()
@@ -814,7 +765,6 @@ class Controller(QObject):
         self.action_confirmation=None
         if outcome is not None and not error:
             completed_at=time.monotonic()
-            self.action_ms=(completed_at-started)*1000
             labels = {'click': 'Click', 'double_click': 'Double-click',
                       'right_click': 'Right-click', 'scroll': 'Scroll',
                       'type_text': 'Text', 'press_keys': 'Keys', 'move': 'Pointer move'}

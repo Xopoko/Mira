@@ -206,7 +206,7 @@ class WindowsOutput:
             raise RuntimeError('The window moved. Look at the target again.')
         # Never fall back or repeat a semantic action that was already sent.
         if self.semantic(intent,target):
-            return {'action':action,'target':target.label,'dispatched':True,'route':'uia'}
+            return {'target':target.label,'route':'uia'}
         if not self.is_active():raise RuntimeError('Control stopped')
         if self.win.shift_down():raise RuntimeError('Release Shift and repeat the command. This target uses standard Windows input.')
         self.win.activate(hwnd)
@@ -258,4 +258,4 @@ class WindowsOutput:
             self._send([self.win.key(vk=k,flags=extended(k)) for k in keys]+[self.win.key(vk=k,flags=2|extended(k)) for k in reversed(keys)])
         else:
             raise RuntimeError(f'Action is unavailable ({action})')
-        return {'action':action,'target':target.label if target else scene.title,'dispatched':True,'route':'native'}
+        return {'target':target.label if target else scene.title,'route':'native'}

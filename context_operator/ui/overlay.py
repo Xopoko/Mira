@@ -14,10 +14,7 @@ class FadeStrengths:
 
 
 def prediction_fresh(prediction,now):
-    if not prediction:return False
-    check=getattr(prediction,'is_fresh',None)
-    if check:return bool(check(now))
-    return 0<=now-getattr(prediction,'motion_at',float('inf'))<.18
+    return prediction is not None and prediction.is_fresh(now)
 
 
 def current_focus_target(scene,target,attention,now,selected_until=0.):

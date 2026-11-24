@@ -54,7 +54,7 @@ class WindowReader:
         controls=root.FindAllBuildCache(4,self.condition,self.cache)
         count=controls.Length if controls else 0
         blocked=blocked or count>4000  # An incomplete scan cannot clear the capture guard.
-        elements=[];self.diagnostic=dict(matched=count,errors=0,last_error='')
+        elements=[]
         for i in range(min(count,4000)):
             try:
                 control=controls.GetElement(i)
@@ -69,9 +69,8 @@ class WindowReader:
                 key=f'{hwnd}:{control.CachedAutomationId}:{role}:{rect.as_list()}:{label}'
                 identity=hashlib.blake2s(key.encode(),digest_size=10).hexdigest()
                 elements.append(Element(identity,label or role,role,rect,hwnd,'uia',True,surface.pid,captured=started))
-            except Exception as exc:
+            except Exception:
                 blocked=True
-                self.diagnostic['errors']+=1;self.diagnostic['last_error']=type(exc).__name__
         if (not self.win.u.IsWindowVisible(hwnd) or self.win.u.IsIconic(hwnd)
                 or self.win.pid(hwnd)!=surface.pid or self.win.rect(hwnd)!=surface.rect):
             raise RuntimeError('Window changed during scan')

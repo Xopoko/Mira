@@ -6,14 +6,41 @@ import runpy
 import sys
 from tempfile import TemporaryDirectory
 import unittest
+from urllib.error import HTTPError, URLError
 from unittest.mock import patch
 
 from PIL import ImageFont
 
-from context_operator.core.contracts import Intent
+from context_operator.core.contracts import Focus, Intent, Rect, Scene
+from context_operator.providers.models import ContextModel
 
 
 class CheckModelsTests(unittest.TestCase):
+    def test_context_model_distinguishes_transport_http_and_malformed_responses(self):
+        address = 'https://model.example:9443/v1'
+        model = ContextModel(dict(model_mode='remote',model_url=address,model_name='fixture'))
+        scene = Scene(1,10,Rect(0,0,800,600),())
+        unreachable = 'Couldn’t reach the model at model.example:9443. You can still use short commands and gaze.'
+        cases = (
+            (dict(side_effect=URLError('offline')), unreachable),
+            (dict(side_effect=TimeoutError()), unreachable),
+            (dict(side_effect=OSError()), unreachable),
+            (dict(side_effect=HTTPError(address,503,'Unavailable',{},None)),
+             'The model server answered with HTTP 503.'),
+            (dict(return_value=io.StringIO('not JSON')),
+             'The model returned an invalid response. You can still use short commands and gaze. JSONDecodeError'),
+        )
+        for fixture, message in cases:
+            with self.subTest(fixture=fixture), patch('context_operator.providers.models.urlopen', **fixture):
+                with self.assertRaises(RuntimeError) as error:
+                    model.interpret('fixture',scene,Focus())
+                self.assertEqual(str(error.exception),message)
+        model.settings['model_url'] = 'https://[::1]/v1'
+        with patch('context_operator.providers.models.urlopen', side_effect=URLError('offline')):
+            with self.assertRaises(RuntimeError) as error:
+                model.interpret('fixture',scene,Focus())
+        self.assertEqual(str(error.exception),unreachable.replace('model.example:9443','[::1]:443'))
+
     def test_wrong_dictation_fails_the_command_even_with_the_right_target(self):
         script = Path(__file__).resolve().parents[1] / 'scripts/check_models.py'
         with TemporaryDirectory() as folder:

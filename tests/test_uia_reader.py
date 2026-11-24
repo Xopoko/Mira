@@ -97,12 +97,14 @@ class ReaderTests(unittest.TestCase):
         provider.pending_limit=2
         provider.jobs=queue.Queue();provider.results=queue.Queue();provider.results.put((surface,None,'COMError'))
         with patch('context_operator.providers.desktop.time.monotonic',return_value=100.5):scene=provider.observe()
+        self.assertEqual(provider.last_error,'COMError')
         self.assertEqual(scene.windows[0].captured,100.)
         self.assertEqual(scene.windows[0].elements,cached.elements)
         self.assertTrue(scene.windows[0].blocked_capture)
         self.assertIsNone(provider.vision_scene(scene,None,100.5))
         provider.results.put((surface,replace(cached,captured=100.6),''))
         with patch('context_operator.providers.desktop.time.monotonic',return_value=100.7):scene=provider.observe()
+        self.assertEqual(provider.last_error,'')
         self.assertFalse(scene.windows[0].blocked_capture)
         self.assertIsNotNone(provider.vision_scene(scene,None,100.7))
 

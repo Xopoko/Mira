@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch
 import numpy as np
 from context_operator.providers.phone_connection import (PhoneConnection, WIFI_PORT, WIFI_PHONE_NEXT_STEP,
                                                          WifiPhoneNotFound, find_phones)
-from context_operator.providers.gaze import PhoneGaze, Sample
+from context_operator.providers.gaze import PhoneGaze
 from context_operator.foundations.gaze.arkit import ARKitWorker, PacketDecoder
 
 
@@ -22,7 +22,7 @@ def packet(seq=1, age=5):
     left=face.copy();left[0,3]=-.032
     right=face.copy();right[0,3]=.032
     return dict(version=1,session='synthetic',seq=seq,timestamp=20+seq/60,ageMs=age,
-                trueDepth=True,depthFrame=True,tracked=True,blink=[0,0],lookAt=[0,0,0],
+                trueDepth=True,tracked=True,blink=[0,0],lookAt=[0,0,0],
                 **{k:v.flatten(order='F').tolist() for k,v in [('face',face),('leftEye',left),('rightEye',right)]})
 
 
@@ -107,7 +107,7 @@ class PhoneTransportTests(unittest.TestCase):
     def run_fixture(self,serve):
         listener=socket.socket();listener.bind(('127.0.0.1',0));listener.listen(1)
         self.addCleanup(listener.close)
-        worker=ARKitWorker(Sample,port=listener.getsockname()[1])
+        worker=ARKitWorker(port=listener.getsockname()[1])
         errors=[]
         def handle():
             try:
@@ -209,6 +209,33 @@ class ConnectionSettingsTests(unittest.TestCase):
             existing=load()
             self.assertEqual((existing['phone_transport'],existing['phone_wifi_host']),('usb','192.168.2.42'))
             self.assertEqual(path.read_text(encoding='utf-8'),saved)
+
+    def test_screen_recognition_and_reranking_default_off_but_saved_settings_win(self):
+        from context_operator.settings import load
+        with TemporaryDirectory() as directory, patch('context_operator.settings.LOCAL', Path(directory)):
+            fresh=load()
+            self.assertEqual((fresh['vision'],fresh['ranker']),(False,False))
+            Path(directory,'settings.json').write_text('{"vision":true,"ranker":true}',encoding='utf-8')
+            existing=load()
+            self.assertEqual((existing['vision'],existing['ranker']),(True,True))
+
+    def test_search_failure_reaches_the_window_status(self):
+        from context_operator.controller import Controller
+        from context_operator.settings import DEFAULTS
+        from context_operator.ui.window import Window
+
+        controller=Controller(dict(DEFAULTS,phone_transport='wifi'))
+        controller.timer.stop()
+        window=Window(controller)
+        window.refresh_timer.stop()
+        try:
+            with patch('context_operator.ui.window.find_phones',side_effect=OSError('adapter failed')), \
+                 patch('context_operator.ui.window.threading.Thread') as thread:
+                window.start_phone_search(from_guide=True)
+                thread.call_args.kwargs['target']()
+            self.assertEqual(window.phone_find_status.text(),'Couldn’t search for iPhone: adapter failed')
+            self.assertTrue(window.find_phone.isEnabled())
+        finally:window.close()
 
     def test_discovered_wifi_address_is_saved_without_pausing_or_stopping_phone(self):
         from context_operator.controller import Controller

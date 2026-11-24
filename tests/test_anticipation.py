@@ -1,6 +1,7 @@
 import os
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 import json,tempfile,time,unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import Mock,patch
 import numpy as np
@@ -39,7 +40,7 @@ def fixate(model,start=10,*,supported=True,source='iphone',point=(680,220),scene
     return result
 
 class PredictionTests(unittest.TestCase):
-    def test_legacy_four_argument_forecast_constructor_gets_mouse_ttl(self):
+    def test_mouse_forecast_uses_mouse_ttl(self):
         forecast=Anticipation(ELEMENTS[0],10.,10.,.7)
         self.assertEqual(forecast.source,'mouse');self.assertEqual(forecast.valid_until,10.18)
         self.assertTrue(forecast.is_fresh(10.17));self.assertFalse(forecast.is_fresh(10.18))
@@ -47,7 +48,7 @@ class PredictionTests(unittest.TestCase):
     def test_gaze_dwell_predicts_without_mouse_and_is_timestamped(self):
         p=IntentPredictor();forecast=fixate(p)
         self.assertIsNotNone(forecast);self.assertEqual(forecast.target.id,'a');self.assertEqual(forecast.source,'gaze')
-        self.assertEqual(forecast.evidence_at,10.275);self.assertTrue(forecast.is_fresh(10.3))
+        self.assertEqual(forecast.motion_at,10.275);self.assertTrue(forecast.is_fresh(10.3))
         self.assertFalse(forecast.is_fresh(forecast.valid_until))
         self.assertEqual(p.model.learned,0);self.assertEqual(p.gaze_model.learned,0)
 
@@ -174,11 +175,13 @@ class PredictionTests(unittest.TestCase):
         self.assertEqual(p.model.hits,0)
 
     def test_replaced_target_before_press_cannot_teach_or_credit_old_object(self):
-        p=IntentPredictor();move(p)
-        replacement=Element('new','New edit','Edit',ELEMENTS[0].rect,10,pid=20)
-        p.observe_scene(Scene(2,10.6,BOUNDS,(replacement,*ELEMENTS[1:]),10),10.61)
-        p.feedback(HumanClick(670,220,10.7,10.8,10,20),10.81)
-        self.assertEqual((p.model.evaluated,p.model.hits,p.model.unmapped,p.model.learned),(1,0,1,0))
+        for replacement in (Element('new','New edit','Edit',ELEMENTS[0].rect,10,pid=20),
+                            replace(ELEMENTS[0],visual_hash='changed')):
+            with self.subTest(replacement=replacement):
+                p=IntentPredictor();move(p)
+                p.observe_scene(Scene(2,10.6,BOUNDS,(replacement,*ELEMENTS[1:]),10),10.61)
+                p.feedback(HumanClick(670,220,10.7,10.8,10,20),10.81)
+                self.assertEqual((p.model.evaluated,p.model.hits,p.model.unmapped,p.model.learned),(1,0,1,0))
 
     def test_page_change_after_press_and_delayed_arrival_do_not_relabel_click(self):
         for capture in (10.6,10.72):

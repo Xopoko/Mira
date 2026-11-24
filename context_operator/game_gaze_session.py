@@ -4,7 +4,7 @@ from __future__ import annotations
 import time
 
 from .core.contracts import Gaze, Rect
-from .providers.game_gaze import GameGazePublisher, eligible_gaze
+from .providers.game_gaze import GameGazePublisher
 
 
 class GameGazeSession:
@@ -43,22 +43,17 @@ class GameGazeSession:
         now = self.clock()
         try:
             raw_gaze, reason, _fps = self.phone.poll(self.radius)
-            measurement = getattr(self.phone, 'measurement', None)
+            measurement = self.phone.measurement
             gaze = self.learning.correct(raw_gaze, measurement, now, self.radius)
-            wrote = self.publisher.publish(
+            result = self.publisher.publish(
                 gaze, measurement, self.desktop, now,
                 phone_present=True,
                 pointer_mode=False, mouse_control=False,
-                training=False, setup=False, running=True,
+                setup=False, running=True,
             )
-            active = eligible_gaze(
-                gaze, measurement, self.desktop, now,
-                phone_present=True,
-                running=True,
-            )
-            if active and wrote:
+            if result == 'active':
                 self.status = 'Gaze live · receiving fresh data'
-            elif active:
+            elif result == 'busy':
                 self.status = 'Gaze live · output busy, update skipped'
             else:
                 self.status = self._waiting_status(reason, measurement)
@@ -70,11 +65,11 @@ class GameGazeSession:
             return self.status
 
     def _waiting_status(self, reason, measurement):
-        worker = getattr(self.phone, 'worker', None)
+        worker = self.phone.worker
         if worker is not None and not worker.is_alive():
             detail = reason or 'iPhone stopped sending data'
             return f'No iPhone connection · {detail}'
-        if measurement is None and worker is not None and getattr(worker, 'frames', 0) == 0:
+        if measurement is None and worker is not None and worker.frames == 0:
             return 'Connecting · waiting for gaze data'
         detail = reason or 'no recent usable frame'
         return f'iPhone connected · tracking unavailable: {detail}'

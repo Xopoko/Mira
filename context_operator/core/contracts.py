@@ -1,6 +1,5 @@
 """Provider-neutral contracts. Coordinates are physical virtual-desktop pixels."""
 from dataclasses import dataclass
-from typing import Protocol, Callable
 import math
 
 TARGET_ACTIONS = frozenset({'click', 'double_click', 'right_click', 'move', 'scroll'})
@@ -110,10 +109,6 @@ class GazeMeasurement:
     features: tuple[float, ...]
     point: tuple[float, float]
     supported: bool = True
-    # Optional same-frame geometry. Learning always consumes `features` in its
-    # profile's fixed coordinate frame; placement calibration uses camera data.
-    raw_features: tuple[float, ...] = ()
-    eye_origins: tuple[tuple[float, float, float], ...] = ()
 
 @dataclass(frozen=True)
 class RankedTarget:
@@ -128,7 +123,6 @@ class Focus:
     alternatives: tuple[RankedTarget, ...] = ()
     ambiguous: bool = False
     reason: str = 'Look at an element'
-    scene_id: int = 0
 
 @dataclass(frozen=True)
 class Intent:
@@ -139,14 +133,3 @@ class Intent:
     keys: tuple[str, ...] = ()
     amount: int = 3
     reply: str = ''
-
-@dataclass(frozen=True)
-class InputEvent:
-    kind: str
-    captured: float
-    gaze: Gaze | None = None
-    text: str = ''
-
-class InputSource(Protocol):
-    def start(self, emit: Callable[[InputEvent], None]) -> None: ...
-    def stop(self) -> None: ...

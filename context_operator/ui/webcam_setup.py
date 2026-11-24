@@ -1,15 +1,15 @@
 """Independent webcam setup. The controller stays paused throughout collection."""
 import time
 
-import numpy as np
 from PySide6.QtCore import Qt, QTimer, QRectF
 from PySide6.QtGui import QColor, QPainter, QPen, QIcon, QFont, QShortcut, QKeySequence
-from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy
+from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy
 
 from ..personalization.webcam import WebcamSession, WebcamProfileStore
 from ..personalization.webcam_attempts import WebcamAttemptStore
 from ..providers.webcam import WebcamGaze
 from ..settings import ASSETS, LOCAL
+from .setup import setup_geometry
 from .window import label, paint_progress, theme
 
 
@@ -55,7 +55,7 @@ class WebcamCanvas(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         if not self.owner.collecting:
             return
-        target = self.owner.session.target_fraction
+        target = self.owner.session.current_target_fraction
         if target is None:
             return
         x, y = self.width()*target[0], self.height()*target[1]
@@ -466,29 +466,11 @@ def open_webcam_setup(controller, parent=None):
         raise RuntimeError('Wait for the current action to finish')
     if not controller.settings.get('webcam_device_id'):
         raise ValueError('Choose a webcam in Settings')
-    screens = QApplication.screens()
-    if not screens:
-        raise RuntimeError('No screen found for setup')
-    area = screens[0].geometry()
-    scale = float(screens[0].devicePixelRatio())
-    for screen in screens[1:]:
-        if abs(float(screen.devicePixelRatio()) - scale) > .01:
-            raise RuntimeError('Use the same Windows scaling on each screen to set up gaze')
-        area = area.united(screen.geometry())
-    physical = np.asarray([area.x()*scale, area.y()*scale, area.width()*scale, area.height()*scale])
-    bounds = np.asarray(controller.win.bounds().as_list())
-    if not np.allclose(physical, bounds, rtol=0, atol=3):
-        raise RuntimeError('The screen layout changed. Check Windows scaling')
-    for fraction in WebcamSession.train_targets + WebcamSession.check_targets:
-        target = bounds[:2] + bounds[2:]*fraction
-        if not any(screen.geometry().x()*scale <= target[0] < (screen.geometry().x()+screen.geometry().width())*scale
-                   and screen.geometry().y()*scale <= target[1] < (screen.geometry().y()+screen.geometry().height())*scale
-                   for screen in screens):
-            raise RuntimeError('A setup point falls between screens. Adjust the screen arrangement in Windows')
+    area, single_screen = setup_geometry(controller, WebcamSession.train_targets + WebcamSession.check_targets)
     controller.pause()
     window = WebcamSetupWindow(controller, parent)
     controller.setup_close = window.close
     window.screen_area = area
-    window.single_screen = len(screens) == 1
+    window.single_screen = single_screen
     window.show()
     return window

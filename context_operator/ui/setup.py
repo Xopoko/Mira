@@ -12,8 +12,7 @@ from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QMainWindow, QP
 from ..foundations.gaze.arkit import ARKitWorker
 from ..personalization import StarterSession, ProfileStore
 from ..personalization.history import preserve_attempt
-from ..personalization.session import MIN_DURATION
-from ..providers.gaze import Sample
+from ..personalization.session import MIN_DURATION, MIN_FRAMES
 from ..providers.phone_connection import PhoneConnection
 from ..settings import ASSETS, LOCAL
 from .window import DARK_SETUP_STYLE, label, paint_progress, theme
@@ -44,8 +43,9 @@ class SetupCanvas(QWidget):
         painter.setPen(Qt.NoPen)
         painter.drawEllipse(QRectF(x-3, y-3, 6, 6))
         frames = self.owner.session.frames
-        progress = (min(1., max(0., frames[-1].captured-frames[0].captured)/MIN_DURATION)
-                    if len(frames) >= 2 else 0.)
+        duration = max(0., frames[-1].captured-frames[0].captured) if len(frames) >= 2 else 0.
+        cap = 1. if self.owner.session.ready_to_confirm else .99
+        progress = min(duration/MIN_DURATION, len(frames)/MIN_FRAMES, cap)
         painter.setBrush(Qt.NoBrush)
         painter.setPen(QPen(QColor(accent), 3))
         painter.drawArc(QRectF(x-27, y-27, 54, 54), 90*16, -int(progress*360*16))
@@ -162,7 +162,7 @@ class SetupWindow(QMainWindow):
             return
         try:
             connection = PhoneConnection.from_settings(self.c.settings)
-            self.worker = self.worker_factory(Sample, connection=connection)
+            self.worker = self.worker_factory(connection=connection)
             self.worker.start()
             self.session.last_seq = -1
             self.session.frames.clear()
@@ -449,10 +449,7 @@ class SetupWindow(QMainWindow):
         super().closeEvent(event)
 
 
-def open_setup(controller, parent=None):
-    """Pause every action source before raw collection; caller owns the window."""
-    if controller.busy or controller.output_pending:
-        raise RuntimeError('Wait for the current action to finish')
+def setup_geometry(controller, targets):
     screens = QApplication.screens()
     if not screens:
         raise RuntimeError('No screen found for setup')
@@ -467,7 +464,7 @@ def open_setup(controller, parent=None):
     bounds = np.asarray(controller.win.bounds().as_list(), dtype=float)
     if not np.allclose(physical, bounds, rtol=0, atol=3):
         raise RuntimeError('The screen layout changed. Check Windows scaling and run setup again')
-    for fraction in StarterSession.train_targets + StarterSession.check_targets:
+    for fraction in targets:
         target = bounds[:2] + bounds[2:]*fraction
         if not any(screen.geometry().x()*scale <= target[0] <
                    (screen.geometry().x()+screen.geometry().width())*scale and
@@ -475,11 +472,19 @@ def open_setup(controller, parent=None):
                    (screen.geometry().y()+screen.geometry().height())*scale
                    for screen in screens):
             raise RuntimeError('A setup point falls between screens. Adjust the screen arrangement in Windows')
+    return area, len(screens) == 1
+
+
+def open_setup(controller, parent=None):
+    """Pause every action source before raw collection; caller owns the window."""
+    if controller.busy or controller.output_pending:
+        raise RuntimeError('Wait for the current action to finish')
+    area, single_screen = setup_geometry(controller, StarterSession.train_targets + StarterSession.check_targets)
     controller.pause()
     window = SetupWindow(controller, parent,
                          on_adopt=controller.activate_profile)
     controller.setup_close = window.close
-    if len(screens) == 1:
+    if single_screen:
         window.showFullScreen()
     else:
         window.setGeometry(area)

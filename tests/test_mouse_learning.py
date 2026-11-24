@@ -9,7 +9,8 @@ from context_operator.core.contracts import Rect,Element,Scene,Focus,Gaze,GazeMe
 from context_operator.controller import Controller
 from context_operator.providers.learning import GazeLearning
 from context_operator.providers.personal_model import DirectModel
-from context_operator.providers.gaze import PhoneGaze,Sample
+from context_operator.providers.gaze import PhoneGaze
+from context_operator.foundations.gaze.arkit import Sample
 from context_operator.foundations.gaze.smoothing import Smoother
 from context_operator.settings import DEFAULTS
 

@@ -5,7 +5,7 @@ Attempts are diagnostic records only. Saving one never adopts a profile.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict
 import hashlib
 import json
 import math
@@ -333,8 +333,7 @@ class WebcamAttemptStore:
         if profile_rows != train_rows:
             raise ValueError('Webcam attempt profile does not match training rows')
 
-        model = _json_tree(asdict(profile) if is_dataclass(profile) else profile.as_dict(),
-                           'model')
+        model = _json_tree(asdict(profile), 'model')
         payload = {
             'schema_version': cls.schema_version,
             'protocol': cls.protocol,

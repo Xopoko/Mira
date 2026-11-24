@@ -1,7 +1,7 @@
 """Choose a fresh screen element from gaze, text or an explicit selection."""
 import math
 import re
-from .contracts import Focus, RankedTarget
+from .contracts import Focus, RankedTarget, SCENE_TTL
 
 def words(text): return set(re.findall(r'[\w]+', text.casefold()))
 
@@ -48,21 +48,9 @@ class Fusion:
             return min(until,gaze.captured+.25)
         return 0.
 
-    def _magnetic_select(self, ranked, best, gaze, query):
+    def _magnetic_select(self, ranked, best, gaze):
         """Select with a short, gaze-driven dwell when focus is magnetic."""
         by_id={r.element.id:r for r in ranked}
-        if query:
-            self._magnetic_identity=by_id[best].element.identity
-            self._magnetic_anchor=(gaze.x,gaze.y) if gaze is not None else None
-            self._magnetic_pending=None
-            self._magnetic_last_frame=gaze.captured if gaze is not None else None
-            return best
-
-        # A prior voice-only override has no spatial acquisition point. Start
-        # its gaze anchor on the first fresh frame after that override.
-        if self._magnetic_anchor is None:
-            self._magnetic_anchor=(gaze.x,gaze.y)
-            self._magnetic_last_frame=gaze.captured
 
         current=by_id.get(self.current)
         # Do not carry a lock when an element was removed, hidden, disabled,
@@ -148,42 +136,38 @@ class Fusion:
     def choose_pointer(self,scene,pointer,now,window=None):
         """A precise pointer selects what it touches, without gaze hysteresis."""
         self.reset()
-        if scene is None or not 0<=now-scene.captured<3:
+        if scene is None or not 0<=now-scene.captured<SCENE_TTL:
             return Focus(reason='Updating the screen map')
         if pointer is None or not pointer.valid or not 0<=now-pointer.captured<.25:
-            return Focus(reason='No mouse pointer',scene_id=scene.id)
+            return Focus(reason='No mouse pointer')
         candidates=[e for e in scene.current_elements(now) if e.enabled and e.rect.w>0 and e.rect.h>0
                     and (window is None or e.window==window) and e.rect.contains(pointer.x,pointer.y)]
         candidates.sort(key=lambda e:(e.rect.w*e.rect.h,e.source!='uia'))
-        if not candidates:return Focus(reason='Move the mouse over an element',scene_id=scene.id)
+        if not candidates:return Focus(reason='Move the mouse over an element')
         self.current=candidates[0].id
         return Focus(candidates[0],tuple(RankedTarget(e,1.,0.,'Selected with the mouse') for e in candidates[:8]),
-                     False,'Selected with the mouse',scene.id)
+                     False,'Selected with the mouse')
 
     def choose(self, scene, gaze, now, query='', *, magnetic=False):
-        scene_age=now-scene.captured if scene is not None else None
-        if scene is None or scene_age > 3 or (magnetic and scene_age < 0):
+        if scene is None or not 0<=now-scene.captured<SCENE_TTL:
             self.reset()
             return Focus(reason='Updating the screen map')
         valid_gaze=gaze is not None and gaze.valid and 0 <= now-gaze.captured < .25
         if magnetic and gaze is not None and not valid_gaze:
-            # A voice-only request may still select a named item, but it must
-            # not inherit a lock from the stale or future gaze sample.
             self.reset()
         if magnetic and valid_gaze and any(not math.isfinite(v) for v in (gaze.x,gaze.y,gaze.radius)):
             self.reset()
-            return Focus(reason='Waiting for fresh gaze data', scene_id=scene.id)
+            return Focus(reason='Waiting for fresh gaze data')
         elements=scene.current_elements(now)
         selected=None
         if self._selection is not None:
-            if not (magnetic and query):
-                selected=next((e for e in elements if e.rect.w>0 and e.rect.h>0
-                               and self.selection_until(e,now,gaze)),None)
+            selected=next((e for e in elements if e.rect.w>0 and e.rect.h>0
+                           and self.selection_until(e,now,gaze)),None)
             if selected is None:
                 self.reset()
         if not valid_gaze and not query and selected is None:
             self.reset()
-            return Focus(reason='Waiting for fresh gaze data', scene_id=scene.id)
+            return Focus(reason='Waiting for fresh gaze data')
         ranked=[]
         requested=words(query)
         for el in elements:
@@ -208,13 +192,13 @@ class Fusion:
         ranked.sort(key=lambda item:item.score,reverse=True)
         if not ranked:
             if magnetic:self.reset()
-            return Focus(reason='Mira couldn’t find an element near your gaze',scene_id=scene.id)
+            return Focus(reason='Mira couldn’t find an element near your gaze')
         if selected is not None:
             target=next(r for r in ranked if r.element is selected)
         else:
             best=ranked[0].element.id
-            if magnetic:
-                best=self._magnetic_select(ranked,best,gaze if valid_gaze else None,query)
+            if magnetic and valid_gaze:
+                best=self._magnetic_select(ranked,best,gaze)
             elif best!=self.current and any(r.element.id==self.current for r in ranked):
                 if best!=self.pending: self.pending,self.pending_since=best,now
                 if now-self.pending_since<self.stability: best=self.current
@@ -225,7 +209,7 @@ class Fusion:
         if selected is not None and target not in alternatives:
             alternatives[-1]=target
         ambiguous=selected is None and len(ranked)>1 and ranked[0].score-ranked[1].score<.18
-        return Focus(target.element,tuple(alternatives),ambiguous,target.reason,scene.id)
+        return Focus(target.element,tuple(alternatives),ambiguous,target.reason)
 
     def cycle(self, focus, now, direction='next'):
         if not focus.target: return None

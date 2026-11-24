@@ -9,12 +9,15 @@ from unittest.mock import Mock, patch
 
 import numpy as np
 from PySide6.QtCore import QPoint, QRect
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QWidget
 
 from context_operator.core.contracts import Rect
 from context_operator.personalization import StarterSession, ProfileStore
-from context_operator.providers.gaze import PhoneGaze, Sample
-from context_operator.ui.setup import SetupWindow, open_setup
+from context_operator.foundations.gaze.arkit import Sample
+from context_operator.providers.gaze import PhoneGaze
+from context_operator.personalization.session import MIN_DURATION, MIN_FRAMES
+from context_operator.ui.setup import SetupCanvas, SetupWindow, open_setup
+from context_operator.ui.webcam_setup import open_webcam_setup
 from test_starter import feature_for, starter_profile
 
 
@@ -268,11 +271,39 @@ class SetupTests(unittest.TestCase):
         second = SimpleNamespace(geometry=lambda: QRect(1120, 0, 800, 1080),
                                  devicePixelRatio=lambda: 1.)
         controller = SimpleNamespace(busy=False, output_pending=False,
+                                     settings={'webcam_device_id': 'fixture'},
                                      win=SimpleNamespace(bounds=lambda: BOUNDS), pause=Mock())
         with patch('context_operator.ui.setup.QApplication.screens', return_value=[first, second]):
-            with self.assertRaisesRegex(RuntimeError, 'falls between screens'):
-                open_setup(controller)
+            for open_window in (open_setup, open_webcam_setup):
+                with self.subTest(open_window=open_window.__name__):
+                    with self.assertRaisesRegex(RuntimeError, 'falls between screens'):
+                        open_window(controller)
+        with patch('context_operator.ui.setup.QApplication.screens', return_value=[first]):
+            for open_window in (open_setup, open_webcam_setup):
+                with self.subTest(layout_mismatch=open_window.__name__):
+                    with self.assertRaisesRegex(RuntimeError, 'Check Windows scaling and run setup again'):
+                        open_window(controller)
         controller.pause.assert_not_called()
+
+    def test_setup_ring_requires_enough_frames_and_steady_fixation(self):
+        owner = QWidget()
+        owner.running = True
+        owner.session = StarterSession(BOUNDS)
+        owner._ready = lambda: True
+        canvas = SetupCanvas(owner)
+        canvas.resize(640, 480)
+        with patch('context_operator.ui.setup.QPainter') as painter:
+            frames = [Sample(captured=t) for t in np.linspace(0., MIN_DURATION+.01, MIN_FRAMES)]
+            owner.session.frames = [frames[0], frames[-1]]
+            canvas.paintEvent(None)
+            arc = painter.return_value.drawArc
+            self.assertEqual(arc.call_args.args[-1], -int(2/MIN_FRAMES*360*16))
+            owner.session.frames = frames
+            canvas.paintEvent(None)
+            self.assertGreater(arc.call_args.args[-1], -360*16)
+            owner.session.ready_to_confirm = True
+            canvas.paintEvent(None)
+            self.assertEqual(arc.call_args.args[-1], -360*16)
 
     def test_disconnect_exposes_reconnect_and_resumes_current_target(self):
         controller = SimpleNamespace(win=SimpleNamespace(bounds=lambda: BOUNDS),

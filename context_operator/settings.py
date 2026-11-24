@@ -8,7 +8,7 @@ LOCAL=(ROOT/'.local' if (ROOT/'launch.pyw').is_file() else
        Path(os.environ.get('LOCALAPPDATA') or Path.home()/'AppData'/'Local')/'Mira')
 DEFAULTS={'radius':230,'stability_ms':110,'microphone':'',
           'model_url':'http://127.0.0.1:18080/v1','model_name':'qwen3.8-local',
-          'model_mode':'local','vision':True,'ranker':True,'show_gaze':True,'highlight_mode':'radial','quiet_mode':False,
+          'model_mode':'local','vision':False,'ranker':False,'show_gaze':True,'highlight_mode':'radial','quiet_mode':False,
           'dwell_enabled':False,'dwell_ms':1200,'fast_voice':True,'speech_silence_ms':280,
           'click_learning':True,'anticipation':True,
           'phone_transport':'wifi','phone_wifi_host':'',

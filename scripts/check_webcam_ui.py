@@ -2,12 +2,10 @@
 
 Run with ``.venv/Scripts/python.exe scripts/check_webcam_ui.py``. All camera
 observations are generated in process; no capture device, model runtime, network,
-or native input is opened. PNG evidence and a compact manifest go to
-``.local/evidence/webcam``.
+or native input is opened.
 """
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 import sys
@@ -37,7 +35,6 @@ APP = QApplication.instance() or QApplication([])
 for _font in ('segoeui.ttf', 'segoeuib.ttf', 'seguisb.ttf', 'seguisym.ttf'):
     QFontDatabase.addApplicationFont('C:/Windows/Fonts/' + _font)
 APP.setFont(QFont('Segoe UI', 10))
-EVIDENCE = ROOT / '.local' / 'evidence' / 'webcam'
 BOUNDS = Rect(0, 0, 1920, 1080)
 
 
@@ -68,10 +65,6 @@ class FakeCameraProvider:
 
 
 class WebcamUiWalkthrough(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        EVIDENCE.mkdir(parents=True, exist_ok=True)
-
     def setUp(self):
         self.controller = Controller(dict(DEFAULTS, vision=False, ranker=False,
             click_learning=False, anticipation=False), output=Mock())
@@ -119,7 +112,7 @@ class WebcamUiWalkthrough(unittest.TestCase):
         self.assertTrue(self.window.webcam_device.isVisible())
         self.assertTrue(self.window.webcam_find.isVisible())
         self.assertTrue(self.window.webcam_toggle.isVisible())
-        self.assertTrue(self.window.grab().save(str(EVIDENCE / 'settings_webcam.png')))
+        self.assertFalse(self.window.grab().isNull())
 
     def test_setup_intro_full_9_plus_5_stream_and_result(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -139,7 +132,7 @@ class WebcamUiWalkthrough(unittest.TestCase):
             self.assertGreaterEqual(window.guide.geometry().top(), 0)
             self.assertLessEqual(window.guide.geometry().bottom() + 1, window.canvas.height())
             self.assertEqual((window.width(), window.height()), (1020, 690))
-            self.assertTrue(window.grab().save(str(EVIDENCE / 'setup_intro.png')))
+            self.assertFalse(window.grab().isNull())
 
             clock = {'now': 100.}
             with patch('context_operator.ui.webcam_setup.time.monotonic', side_effect=lambda: clock['now']):
@@ -150,7 +143,7 @@ class WebcamUiWalkthrough(unittest.TestCase):
                 self.assertTrue(window.collecting)
                 camera = window.provider
                 seq = 1
-                target_screenshot = False
+                target_rendered = False
                 for target in (*TRAIN_TARGETS, *CHECK_TARGETS):
                     values = feature_for(target)
                     previous = (window.session.phase, window.session.index)
@@ -170,12 +163,12 @@ class WebcamUiWalkthrough(unittest.TestCase):
                         clock['now'] = captured + .21
                         window.tick()
                         seq += 1
-                        if not target_screenshot and frame == 5:
+                        if not target_rendered and frame == 5:
                             APP.processEvents()
                             self.assertFalse(window.session.ready)
                             self.assertGreater(window.session.progress, 0.)
-                            self.assertTrue(window.grab().save(str(EVIDENCE / 'setup_target.png')))
-                            target_screenshot = True
+                            self.assertFalse(window.grab().isNull())
+                            target_rendered = True
                         if previous != (window.session.phase, window.session.index):
                             break
                     self.assertNotEqual(previous, (window.session.phase, window.session.index))
@@ -191,25 +184,11 @@ class WebcamUiWalkthrough(unittest.TestCase):
             self.assertIsNotNone(window.attempt_path)
             self.assertEqual(WebcamAttemptStore(folder).load_latest()['usable'], True)
             APP.processEvents()
-            self.assertTrue(window.grab().save(str(EVIDENCE / 'setup_result.png')))
+            self.assertFalse(window.grab().isNull())
             window.apply_button.click()
             self.assertTrue(window.applied)
             saved = WebcamProfileStore(folder).load(BOUNDS, 'fixture-camera')
             self.assertEqual(saved.device_id, 'fixture-camera')
-            manifest = {
-                'mode': 'offscreen Qt with generated numeric observations',
-                'hardware_opened': False, 'network_used': False, 'native_input_used': False,
-                'cadence_fps': 6, 'inference_latency_ms': 60, 'automatic_advance': True,
-                'train_targets': len(window.session.train), 'check_targets': len(window.session.check),
-                'usable': window.session.report.usable, 'passed': window.session.report.passed,
-                'tests': ['WebcamUiWalkthrough.test_settings_select_device_without_connecting_it',
-                          'WebcamUiWalkthrough.test_setup_intro_full_9_plus_5_stream_and_result',
-                          'WebcamUiWalkthrough.test_pause_preview_return_and_target_reaction_barrier',
-                          'WebcamUiWalkthrough.test_compact_preparation_has_one_action_and_readable_content',
-                          'WebcamUiWalkthrough.test_failed_result_preserves_numeric_attempt_and_does_not_blame_placement'],
-                'screenshots': ['settings_webcam.png', 'setup_intro.png', 'setup_target.png', 'setup_result.png', 'setup_compact.png', 'setup_failed.png'],
-            }
-            (EVIDENCE / 'walkthrough.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
 
     def test_pause_preview_return_and_target_reaction_barrier(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -275,7 +254,7 @@ class WebcamUiWalkthrough(unittest.TestCase):
             self.assertGreaterEqual(position.y(), 0)
             self.assertLessEqual(position.x()+widget.width(), window.canvas.width())
             self.assertLessEqual(position.y()+widget.height(), window.canvas.height())
-        self.assertTrue(window.grab().save(str(EVIDENCE / 'setup_compact.png')))
+        self.assertFalse(window.grab().isNull())
 
     def test_failed_result_preserves_numeric_attempt_and_does_not_blame_placement(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -315,7 +294,7 @@ class WebcamUiWalkthrough(unittest.TestCase):
             self.assertIn('saved the measurements', window.record_status.text())
             for bad_copy in ('improve the angle', 'glare', 'eye level', 'Turn your'):
                 self.assertNotIn(bad_copy, window.section.text()+window.guide.text())
-            self.assertTrue(window.grab().save(str(EVIDENCE / 'setup_failed.png')))
+            self.assertFalse(window.grab().isNull())
 
 
 if __name__ == '__main__':

@@ -2,7 +2,7 @@ import os
 import struct
 import unittest
 import uuid
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from context_operator.core.contracts import Gaze, GazeMeasurement, Rect
 from context_operator.providers.game_gaze import (
@@ -52,11 +52,11 @@ class GameGazePacketTests(unittest.TestCase):
                 self.assertFalse(eligible_gaze(gaze, measurement, self.bounds, now,
                                                phone_present=True))
 
-    def test_pointer_training_pause_disconnect_and_off_desktop_revoke(self):
+    def test_pointer_setup_pause_disconnect_and_off_desktop_revoke(self):
         gaze, measurement = self.gaze_pair()
         common = dict(phone_present=True)
         for gates in ({"pointer_mode": True}, {"mouse_control": True},
-                      {"training": True}, {"setup": True}, {"running": False},
+                      {"setup": True}, {"running": False},
                       {"phone_present": False}):
             with self.subTest(gates=gates):
                 self.assertFalse(eligible_gaze(gaze, measurement, self.bounds, 10.01,
@@ -104,17 +104,31 @@ class GameGazeWindowsTests(unittest.TestCase):
                 self.assertEqual(PACKET.unpack(packet)[2], 0)
                 gaze = Gaze(50, 50, __import__("time").monotonic(), 25)
                 measurement = GazeMeasurement(gaze.captured, (0.0,) * 22, (50, 50), True)
-                publisher.publish(gaze, measurement, Rect(0, 0, 100, 100),
-                                  gaze.captured + 0.001, phone_present=True)
+                self.assertEqual(publisher.publish(gaze, measurement, Rect(0, 0, 100, 100),
+                                                   gaze.captured + 0.001, phone_present=True), 'active')
                 self.assertEqual(PACKET.unpack(publisher._mapping[:PACKET_SIZE])[2], FLAG_ACTIVE)
             finally:
                 publisher.close()
 
 
+    def test_open_and_close_wait_for_lock_but_frame_publishing_does_not(self):
+        with patch('ctypes.WinDLL') as load_kernel, patch('mmap.mmap') as open_mapping:
+            kernel = load_kernel.return_value
+            kernel.CreateMutexW.side_effect = [1, 2]
+            kernel.WaitForSingleObject.side_effect = [0, 0, 0x102, 0]
+            publisher = GameGazePublisher()
+            try:
+                self.assertEqual(publisher.publish(None, None, None, 1., phone_present=False), 'busy')
+            finally:
+                publisher.close()
+        self.assertEqual([call.args for call in kernel.WaitForSingleObject.call_args_list],
+                         [(1, 0), (2, 100), (2, 0), (2, 100)])
+        self.assertEqual(open_mapping.return_value.write.call_count, 2)
+
+
 class ControllerGameGazeIntegrationTests(unittest.TestCase):
     def test_disabled_setting_does_not_construct_publisher(self):
         from types import SimpleNamespace
-        from unittest.mock import Mock
         from context_operator.controller import Controller
         factory = Mock()
         controller = SimpleNamespace(settings={"game_gaze_enabled": False},
@@ -125,13 +139,12 @@ class ControllerGameGazeIntegrationTests(unittest.TestCase):
 
     def test_nonrunning_tick_does_not_reclaim_writer_after_pause(self):
         from types import SimpleNamespace
-        from unittest.mock import Mock
         from context_operator.controller import Controller
         publisher = Mock()
         controller = SimpleNamespace(settings={"game_gaze_enabled": True},
                                      game_gaze_factory=lambda: publisher,
                                      game_gaze_publisher=None, game_gaze_unavailable=False,
-                                     module=SimpleNamespace(emit=Mock()), phone=None,
+                                     phone=None,
                                      gaze=Gaze(1, 1, 1), pointer_mode=False,
                                      mouse_control=False,
                                      setup_close=None, _close_game_gaze=Mock())
@@ -139,25 +152,28 @@ class ControllerGameGazeIntegrationTests(unittest.TestCase):
         controller._close_game_gaze.assert_called_once()
         publisher.publish.assert_not_called()
 
-    def test_transient_writer_conflict_retries_after_backoff(self):
+    def test_open_and_publish_failures_report_once_until_the_feed_writes_again(self):
         from types import SimpleNamespace
-        from unittest.mock import Mock
         from context_operator.controller import Controller
-        publisher=Mock();factory=Mock(side_effect=[RuntimeError('writer busy'),publisher])
+        publisher=Mock()
+        publisher.publish.side_effect=[OSError('write failed'), 'busy', 'inactive', OSError('write failed')]
+        factory=Mock(side_effect=[RuntimeError('writer busy'), RuntimeError('writer busy'), publisher,
+                                  publisher, publisher])
         controller=SimpleNamespace(settings={"game_gaze_enabled":True},game_gaze_factory=factory,
-            game_gaze_publisher=None,game_gaze_unavailable=False,module=SimpleNamespace(emit=Mock()),
-            phone=None,gaze=None,pointer_mode=False,mouse_control=False,
-            setup_close=None,_close_game_gaze=Mock())
-        Controller._publish_game_gaze(controller,1.,running=True)
-        Controller._publish_game_gaze(controller,2.,running=True)
-        self.assertEqual(factory.call_count,1)
-        Controller._publish_game_gaze(controller,3.1,running=True)
-        self.assertEqual(factory.call_count,2)
-        publisher.publish.assert_called_once_with(
-            controller.gaze, None, None, 3.1, phone_present=False,
-            pointer_mode=False, mouse_control=False,
-            setup=False, running=True)
-        self.assertFalse(controller.game_gaze_unavailable)
+            game_gaze_publisher=None,game_gaze_unavailable=False,game_gaze_retry_at=0.,
+            message=Mock(),phone=None,gaze=None,pointer_mode=False,mouse_control=False,
+            setup_close=None)
+        controller._close_game_gaze=lambda:Controller._close_game_gaze(controller)
+        for now in (1.,2.,3.1,5.2,7.3,7.4,7.5):
+            Controller._publish_game_gaze(controller,now,running=True)
+        self.assertEqual(factory.call_count,4)
+        self.assertEqual([call.args for call in controller.message.emit.call_args_list],
+                         [('Game gaze feed','Unavailable: writer busy'),
+                          ('Game gaze feed','Unavailable: write failed')])
+        self.assertEqual(publisher.publish.call_args.args, (None, None, None, 7.5))
+        self.assertEqual(publisher.publish.call_args.kwargs, dict(
+            phone_present=False, pointer_mode=False, mouse_control=False, setup=False, running=True))
+        self.assertTrue(controller.game_gaze_unavailable)
 
 
 if __name__ == "__main__":

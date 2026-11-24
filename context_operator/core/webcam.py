@@ -42,7 +42,7 @@ class GazeArbitrator:
         self.last = None
         self.count = 0
 
-    def choose(self, primary, secondary, now, *, primary_mode='iphone'):
+    def choose(self, primary, secondary, now):
         primary = primary if fresh(primary, now) else None
         secondary = secondary if fresh(secondary, now) and secondary.source == 'webcam' else None
         if secondary is None:
@@ -60,7 +60,7 @@ class GazeArbitrator:
             agreement = None
             if secondary is not None and abs(primary.captured - secondary.captured) <= .08:
                 agreement = math.hypot(primary.x - secondary.x, primary.y - secondary.y) <= max(primary.radius, secondary.radius)
-            return GazeChoice(primary, primary_mode, agreement)
+            return GazeChoice(primary, 'iphone', agreement)
         if secondary is not None and self.count >= 3 and self.last - self.first >= .12:
             return GazeChoice(secondary, 'webcam')
         return GazeChoice(None, 'none')

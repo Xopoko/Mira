@@ -6,6 +6,7 @@ import time
 import threading
 from pathlib import Path
 from unittest.mock import Mock,patch
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 from context_operator.controller import Controller
 from context_operator.settings import DEFAULTS
@@ -260,38 +261,37 @@ class LifecycleTests(unittest.TestCase):
         self.c.action_epoch=2
         self.c._vision((self.scene,time.monotonic(),(self.el,),1),4)
         self.assertEqual(self.c.vision_elements,())
-    def test_stopping_a_registered_gaze_source_revokes_only_its_target(self):
-        class Source:
-            def start(self,emit):self.emit=emit
-            def stop(self):self.stopped=True
-        c=self.c
-        source,other=Source(),Source()
-        c.register_source('gaze-fixture',source);c.enable_source('gaze-fixture')
-        c.register_source('command-fixture',other);c.enable_source('command-fixture')
-        now=time.monotonic()
-        gaze=Gaze(35,20,now,100)
-        emit=source.emit
-        emit(InputEvent('gaze',now,gaze))
-        c.win=Mock();c.win.emergency.return_value=False;c.win.shift_down.return_value=False
-        c.tick()
-        self.assertEqual(c.focus.target.id,'button')
-        epoch=c.gaze_source_epoch
+    def test_screen_recognition_reports_startup_failure_once(self):
+        from context_operator.foundations.perception.runtime import PerceptionClient
+        stopped=threading.Event();notices=Mock()
+        self.c.message.connect(notices)
+        client=Mock(spec=PerceptionClient)
+        client.ready.side_effect=OSError('runtime missing')
+        with patch('context_operator.foundations.perception.runtime.PerceptionClient',return_value=client):
+            self.c.scene=None
+            try:
+                self.c._start_vision(stopped,self.c.generation)
+                deadline=time.monotonic()+2
+                while not notices.called and time.monotonic()<deadline:drain()
+                drain();drain()
+                notices.assert_called_once_with('Screen recognition','Unavailable: runtime missing')
+            finally:
+                stopped.set()
+                self.c.message.disconnect(notices)
 
-        c.disable_source('command-fixture')
-        c.tick()
-        self.assertTrue(other.stopped)
-        self.assertIs(c.gaze,gaze)
-        self.assertEqual(c.gaze_source_epoch,epoch)
+    def test_emergency_stop_closes_iphone_setup_while_paused(self):
+        self.c.running=False
+        self.c.win=Mock()
+        self.c.win.emergency.return_value=True
+        close=Mock()
+        self.c.setup_close=close
+        notices=Mock()
+        self.c.message.connect(notices)
+        self.c.tick()
+        close.assert_called_once()
+        self.assertIsNone(self.c.setup_close)
+        notices.assert_called_once_with('Stop','Capture and control stopped')
 
-        c.disable_source('gaze-fixture')
-        self.assertTrue(source.stopped)
-        self.assertIsNone(c.attention)
-        self.assertIsNone(c.focus.target)
-        self.assertGreater(c.gaze_source_epoch,epoch)
-
-        c.enable_source('gaze-fixture')
-        emit(InputEvent('gaze',now,gaze))
-        self.assertIsNone(c.source_gaze)
     def test_dwell_does_not_repeat_through_scene_refresh(self):
         from dataclasses import replace
         self.c.settings['dwell_enabled']=True;self.c.settings['dwell_ms']=700

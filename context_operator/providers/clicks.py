@@ -41,12 +41,12 @@ class ClickFilter:
 class MouseClicks:
     def __init__(self):
         self.events=queue.Queue(maxsize=64);self.worker=None;self.thread_id=0
-        self.stop_event=threading.Event();self.error='';self.ready=threading.Event()
+        self.stop_event=threading.Event();self.error=''
         self.motions=deque(maxlen=256)
 
     def start(self):
         if self.worker and self.worker.is_alive():return
-        self.stop_event.clear();self.ready.clear();self.error='';self.drain();self.drain_motion()
+        self.stop_event.clear();self.error='';self.drain();self.drain_motion()
         self.worker=threading.Thread(target=self._run,daemon=True,name='human-click-observer');self.worker.start()
 
     def drain(self):
@@ -87,7 +87,6 @@ class MouseClicks:
             kernel.GetTickCount64.restype=C.c_ulonglong
             self.thread_id=kernel.GetCurrentThreadId();filter=ClickFilter()
             last_motion=0.;buttons=set();down_owner=(0,0)
-            # Create the message queue before exposing readiness to stop().
             msg=W.MSG();user.PeekMessageW(C.byref(msg),None,0,0,0)
             @proc
             def callback(code,message,data):
@@ -121,11 +120,10 @@ class MouseClicks:
                 return user.CallNextHookEx(None,code,message,data)
             hook=user.SetWindowsHookExW(14,callback,kernel.GetModuleHandleW(None),0)
             if not hook:raise C.WinError(C.get_last_error())
-            self.ready.set()
             while not self.stop_event.is_set():
                 result=user.GetMessageW(C.byref(msg),None,0,0)
                 if result<=0:break
         except Exception as exc:self.error=str(exc)
         finally:
             if hook:user.UnhookWindowsHookEx(hook)
-            self.thread_id=0;self.ready.set()
+            self.thread_id=0

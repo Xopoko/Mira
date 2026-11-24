@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 import uuid
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from urllib.parse import urlparse
 from ..settings import ROOT,LOCAL
@@ -318,6 +319,11 @@ class ContextModel:
             if output.startswith('```'):output=output.split('\n',1)[1].rsplit('```',1)[0]
             decision=json.loads(output)
             if not isinstance(decision,dict):raise ValueError('Expected one action object')
+        except HTTPError as exc:raise RuntimeError(f'The model server answered with HTTP {exc.code}.') from None
+        except (URLError, TimeoutError, OSError):
+            host=parsed.netloc
+            if parsed.port is None:host+=':443' if parsed.scheme=='https' else ':80'
+            raise RuntimeError(f'Couldn’t reach the model at {host}. You can still use short commands and gaze.') from None
         except Exception as exc:raise RuntimeError('The model returned an invalid response. You can still use short commands and gaze. '+type(exc).__name__) from None
         action=decision.get('action')
         if action not in MODEL_ACTIONS:raise RuntimeError('The model suggested an unknown action')

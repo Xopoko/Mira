@@ -54,7 +54,7 @@ class ScreenProvider:
             self.pending.discard(surface.window)
             current=by_id.get(surface.window)
             if current and (current.pid,current.rect)==(surface.pid,surface.rect):
-                if result:self.maps[surface.window]=result
+                if result:self.maps[surface.window]=result;self.last_error=''
                 elif error:
                     self.last_error=error
                     # Existing public outlines may live only until their original

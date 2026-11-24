@@ -220,12 +220,22 @@ class IntegrationTests(unittest.TestCase):
             with patch('context_operator.controller.time.monotonic',return_value=stamp):self.c._scene(source,self.c.generation,self.c.action_epoch)
             self.assertEqual({e.id for e in self.c.scene.elements if e.source=='ocr'},{'ocr1','ocr2'})
 
+    def test_empty_screen_map_displays_scan_error_until_recovery(self):
+        empty=replace(desktop(time.monotonic()),elements=(),windows=())
+        self.c.scene_provider=Mock(last_error='COMError')
+        self.c._scene(empty,self.c.generation,self.c.action_epoch)
+        self.assertEqual(self.c.status,'Can’t read screen elements (COMError)')
+        self.c.scene_provider.last_error=''
+        self.c._scene(empty,self.c.generation,self.c.action_epoch)
+        self.assertEqual(self.c.status,'Ready · connect iPhone or name an element')
+
 class VisualCacheTests(unittest.TestCase):
     def test_close_releases_client_after_unread_results(self):
         entered=threading.Event();release=threading.Event()
         next_started=threading.Event();closed=threading.Event()
         first=Image.new('RGB',(20,20));other=first.copy();rect=Rect(0,0,20,20)
         class Client:
+            child=None
             def ready(self,stop):pass
             def observe(self,image,stop):
                 if image is first:entered.set();release.wait(2)

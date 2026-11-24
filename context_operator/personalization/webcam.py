@@ -272,7 +272,6 @@ class WebcamSession:
         self.train = []
         self.check = []
         self.frames = []
-        self.invalid_frames = 0
         self.last_seq = -1
         self.last_observation = None
         self.last_confirmed_seq = -1
@@ -291,10 +290,6 @@ class WebcamSession:
         if self.phase == 'check':
             return self.check_targets[self.index]
         return None
-
-    @property
-    def target_fraction(self):
-        return self.current_target_fraction
 
     @property
     def complete(self):
@@ -325,16 +320,6 @@ class WebcamSession:
             return 1.0
         return min(1.0, self.sample_count / _MIN_FRAMES,
                    self.duration / _MIN_DURATION)
-
-    @property
-    def collection_state(self):
-        if self.ready:
-            return 'ready'
-        if self._motion_detected:
-            return 'moving'
-        if self.excluded_count:
-            return 'outliers'
-        return 'collecting'
 
     def _analyze_fixation(self):
         """Return robust inliers, excluding at most 15% isolated feature spikes.
@@ -369,7 +354,6 @@ class WebcamSession:
         # eventual confirmed fixation, not over time spent arranging the camera.
         # Otherwise unbounded rejected polls divided by a bounded frame window
         # would make recovery impossible even after a long stable signal.
-        self.invalid_frames = 0
         self.last_observation = None
         self.ready = False
         self._inlier_indices = ()
@@ -388,7 +372,6 @@ class WebcamSession:
             self._clear('Setup complete')
             return
         if not isinstance(obs, WebcamObservation):
-            self.invalid_frames += 1
             self._clear('Invalid camera reading')
             return
         try:
@@ -398,11 +381,9 @@ class WebcamSession:
             captured, current = math.nan, math.nan
         if (obs.reason or not math.isfinite(captured) or not math.isfinite(current) or
                 current < captured):
-            self.invalid_frames += 1
             self._clear(obs.reason or 'Waiting for a fresh camera frame')
             return
         if type(obs.seq) is not int:
-            self.invalid_frames += 1
             self._clear('Invalid camera frame number')
             return
         if current - captured > _FRESH_SECONDS:
@@ -422,21 +403,18 @@ class WebcamSession:
             # is not new evidence, but it must not erase a valid fixation.
             return
         if obs.seq < self.last_seq:
-            self.invalid_frames += 1
             self._clear('Camera frame arrived out of order')
             return
         self.last_seq = obs.seq
         try:
             features = _feature_row(obs.features)
         except (TypeError, ValueError):
-            self.invalid_frames += 1
             self._clear('The camera needs to see both eyes and your head')
             return
         if self.frames:
             previous = self.frames[-1][0]
             gap = captured - float(previous.captured)
             if gap <= 0 or gap >= _FRESH_SECONDS:
-                self.invalid_frames += len(self.frames)
                 self._clear('The camera stream stopped. Look at the point again.')
         if self.frames:
             window_start = captured - _WINDOW_SECONDS
@@ -499,7 +477,7 @@ class WebcamSession:
             # from the fixation mean, so jitter still counts against usability.
             raw_feature_rows = tuple(row for _, row in self.frames)
             checks = self.check + [{'target_fraction': target, 'features': raw_feature_rows,
-                                   'invalid_frames': self.invalid_frames}]
+                                   'invalid_frames': 0}]
             if len(checks) == len(self.check_targets):
                 self.report = self.candidate.validate_rows(checks)
                 from dataclasses import replace
@@ -511,7 +489,6 @@ class WebcamSession:
             self.check = checks
         self.last_confirmed_seq = obs.seq
         self.frames = []
-        self.invalid_frames = 0
         self.last_observation = None
         self.ready = False
         self._inlier_indices = ()
@@ -656,10 +633,11 @@ class WebcamProfileStore:
         if self.path.exists():
             try:
                 self._read(self.path, Rect(*profile.bounds), profile.device_id)
-                os.replace(self.path, self.backup_path)
             except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError, OverflowError):
                 # Replacing a corrupt/mismatched primary must not erase a known-good backup.
                 pass
+            else:
+                os.replace(self.path, self.backup_path)
         try:
             os.replace(temp, self.path)
         except OSError:

@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from pathlib import Path
 import time
 import numpy as np
@@ -11,23 +10,6 @@ from .phone_connection import PhoneConnection
 def learning_path(key,folder=None):
     folder=LOCAL if folder is None else Path(folder)
     return folder/f'gaze-adaptation-personal-{key[:16]}.json'
-
-@dataclass
-class Sample:
-    seq:int=0
-    captured:float=0.
-    features:object=None
-    blink:bool=False
-    error:str=''
-    fps:float=0.
-    pose:tuple=(0.,0.,0.)
-    reason:str=''
-    source:str='arkit'
-    depth_available:bool=False
-    depth_recent:bool=False
-    source_age_ms:float=0.
-    read_wait_ms:float=0.
-    eye_origins:tuple=()
 
 class PhoneGaze:
     def __init__(self,bounds,connection=None):
@@ -44,7 +26,7 @@ class PhoneGaze:
 
     def start(self):
         if self.worker and self.worker.is_alive():return
-        self.worker=ARKitWorker(Sample,connection=self.connection);self.worker.start()
+        self.worker=ARKitWorker(connection=self.connection);self.worker.start()
 
     def poll(self,radius):
         self.measurement=None;self.invalid_captured=None
@@ -68,8 +50,7 @@ class PhoneGaze:
         if np.asarray(prediction).shape!=(2,) or not np.isfinite(prediction).all():
             self.invalid_captured=missing_stamp
             self.smoother.reset();return None,'Can’t detect gaze',sample.fps
-        self.measurement=GazeMeasurement(sample.captured,tuple(features),tuple(prediction),supported,
-            raw_features=tuple(sample.features),eye_origins=sample.eye_origins)
+        self.measurement=GazeMeasurement(sample.captured,tuple(features),tuple(prediction),supported)
         if not supported:
             self.smoother.reset()
             cm=-float(sample.features[6])*100
@@ -79,8 +60,8 @@ class PhoneGaze:
             # Preserve the raw measurement for learning; constrain only output,
             # before smoothing, so an overshoot cannot hide the marker offscreen.
             b=np.asarray(self.bounds.as_list())
-            self.point=self.smoother.update(np.clip(prediction,b[:2],b[:2]+b[2:]-1),sample.captured)
-        point=getattr(self,'point',None)
+            self.smoother.update(np.clip(prediction,b[:2],b[:2]+b[2:]-1),sample.captured)
+        point=self.smoother.point
         if point is None:return None,'Waiting for gaze',sample.fps
         link='Wi-Fi' if self.connection.transport=='wifi' else 'USB'
         return Gaze(*point,sample.captured,self.validation_radius),f'Gaze setup · {-float(sample.features[6])*100:.0f} cm · {link} · data age ≤ {sample.source_age_ms:.0f} ms · response {sample.read_wait_ms:.0f} ms',sample.fps

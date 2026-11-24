@@ -17,10 +17,10 @@ class MagneticSelectionTests(unittest.TestCase):
     def gaze(self, x, captured, y=230, radius=90):
         return Gaze(x, y, captured, radius)
 
-    def choose(self, x, captured, now=None, scene=None, query='', y=230):
+    def choose(self, x, captured, now=None, scene=None, y=230):
         now = captured if now is None else now
         scene = self.scene if scene is None else scene
-        return self.fusion.choose(scene, self.gaze(x, captured, y), now, query,
+        return self.fusion.choose(scene, self.gaze(x, captured, y), now,
                                  magnetic=True)
 
     def test_small_jitter_keeps_the_actual_focus_target(self):
@@ -55,8 +55,8 @@ class MagneticSelectionTests(unittest.TestCase):
         button = Element('child', 'Send', 'Button', Rect(400, 200, 90, 45), 1)
         scene = Scene(2, 100, self.scene.bounds, (pane, button), 1)
         fusion = Fusion(.12)
-        self.assertEqual(fusion.choose(scene, self.gaze(420, 100), 100,
-                                       'Panel', magnetic=True).target.id, 'pane')
+        self.assertEqual(fusion.choose(replace(scene, elements=(pane,)), self.gaze(420, 100),
+                                       100, magnetic=True).target.id, 'pane')
         self.assertEqual(fusion.choose(scene, self.gaze(420, 102.01), 102.01,
                                        magnetic=True).target.id, 'pane')
         self.assertEqual(fusion.choose(scene, self.gaze(420, 102.20), 102.20,
@@ -74,14 +74,6 @@ class MagneticSelectionTests(unittest.TestCase):
         self.assertIsNone(self.fusion.choose(
             self.scene, self.gaze(450, 101), 100, magnetic=True).target)
         self.assertIsNone(self.fusion._magnetic_identity)
-
-    def test_future_gaze_does_not_preserve_lock_during_voice_override(self):
-        self.choose(450, 100)
-        focus = self.fusion.choose(self.scene, self.gaze(450, 101), 100,
-                                   'Clock', magnetic=True)
-        self.assertEqual(focus.target.id, 'clock')
-        self.assertEqual(self.fusion._magnetic_identity, self.clock.identity)
-        self.assertIsNone(self.fusion._magnetic_anchor)
 
     def test_future_scene_clears_lock(self):
         self.choose(450, 100)
@@ -107,11 +99,10 @@ class MagneticSelectionTests(unittest.TestCase):
         self.assertEqual(self.choose(600, 100.04, scene=removed).target.id, 'minus')
         self.assertEqual(self.fusion._magnetic_identity, self.minus.identity)
 
-    def test_voice_query_and_cycle_are_immediate_overrides(self):
+    def test_cycle_is_an_immediate_override(self):
         focus = self.choose(450, 100)
         self.assertEqual(self.fusion.cycle(focus, 100.01, 'right').id, 'minus')
         self.assertEqual(self.choose(450, 100.02).target.id, 'minus')
-        self.assertEqual(self.choose(450, 100.03, query='Clock').target.id, 'clock')
 
     def test_explicit_choice_keeps_the_exact_element_without_gaze(self):
         duplicate = replace(self.minus, label=self.plus.label)
