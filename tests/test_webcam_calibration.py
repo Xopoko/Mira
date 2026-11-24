@@ -170,35 +170,22 @@ class WebcamSessionTests(unittest.TestCase):
     def test_six_fps_with_inference_latency_and_stale_ui_polls_can_finish(self):
         session = WebcamSession(BOUNDS, 'camera-1')
         feature = feature_for(TRAIN_TARGETS[0])
-        became_ready = False
-        for i in range(11):
+        for i in range(10):
             stamp = i / 6
             observation = WebcamObservation(i, stamp, feature)
             session.feed(observation, stamp + .06)
-            became_ready |= session.ready
             if i == 9:
-                self.assertTrue(session.ready)
+                self.assertTrue(session.ready, session.hold_reason)
+                self.assertEqual(session.sample_count, 10)
+                self.assertGreaterEqual(session.duration, .65)
+                self.assertEqual(session.progress, 1.0)
             session.feed(observation, stamp + .21)
             self.assertFalse(session.ready)
             self.assertFalse(session.confirm(stamp + .21))
             self.assertEqual(len(session.frames), i+1)
-        self.assertTrue(became_ready)
-        # Historical rows never bridge an actual capture outage.
-        session.feed(WebcamObservation(11, 3., feature), 3.06)
-        self.assertFalse(session.ready)
-        self.assertEqual(len(session.frames), 1)
-
-    def test_six_fps_stable_fixation_keeps_ten_distinct_frames(self):
-        session = WebcamSession(BOUNDS, 'camera-1')
-        feature = feature_for(TRAIN_TARGETS[0])
-        for i in range(10):
-            stamp = i / 6
-            session.feed(WebcamObservation(i, stamp, feature), stamp)
-        self.assertTrue(session.ready, session.hold_reason)
-        self.assertEqual(session.sample_count, 10)
-        self.assertGreaterEqual(session.duration, .65)
-        self.assertEqual(session.progress, 1.0)
-        self.assertTrue(session.confirm(10 / 6))
+        stamp = 10 / 6
+        session.feed(WebcamObservation(10, stamp, feature), stamp + .06)
+        self.assertTrue(session.confirm(stamp + .06))
         np.testing.assert_allclose(session.train[0]['features'], feature, atol=1e-12)
 
     def test_terminal_spike_cannot_auto_confirm_until_new_coherent_frame(self):

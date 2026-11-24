@@ -206,8 +206,7 @@ class IntegrationTests(unittest.TestCase):
         self.c._decision(Intent('select',target_id='b'),source,self.c.generation,now)
         self.assertEqual(self.c.fusion.selection_until(b.elements[0],now),0.)
 
-    def test_verified_ocr_of_two_windows_stays_present_during_slow_third_inference(self):
-        # Cache verification has its own cadence, independent of model completion.
+    def test_verified_ocr_is_combined_across_two_windows(self):
         now=time.monotonic()
         for tick in range(20):
             stamp=now+tick*.1;source=desktop(stamp)

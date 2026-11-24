@@ -45,15 +45,15 @@ class GameGazeSession:
             raw_gaze, reason, _fps = self.phone.poll(self.radius)
             measurement = self.phone.measurement
             gaze = self.learning.correct(raw_gaze, measurement, now, self.radius)
-            result = self.publisher.publish(
+            active, written = self.publisher.publish(
                 gaze, measurement, self.desktop, now,
                 phone_present=True,
                 pointer_mode=False, mouse_control=False,
                 setup=False, running=True,
             )
-            if result == 'active':
+            if active and written:
                 self.status = 'Gaze live · receiving fresh data'
-            elif result == 'busy':
+            elif active:
                 self.status = 'Gaze live · output busy, update skipped'
             else:
                 self.status = self._waiting_status(reason, measurement)

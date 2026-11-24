@@ -31,7 +31,7 @@ class PhoneTransportTests(unittest.TestCase):
         for host in ('192.168.2.42','10.1.2.3','172.20.2.4'):
             with patch('context_operator.providers.phone_connection.socket.create_connection') as connect:
                 PhoneConnection('wifi',host).open()
-                connect.assert_called_once_with((host,WIFI_PORT),timeout=2)
+                connect.assert_called_once_with((host,39472),timeout=2)
         for host in ('localhost','127.0.0.1','0.0.0.0','8.8.8.8','169.254.1.1','224.0.0.1',
                      '192.168.1.1:39472','https://192.168.1.1','192.168.001.2','::1'):
             with self.subTest(host=host),self.assertRaises(ValueError):PhoneConnection('wifi',host)

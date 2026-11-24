@@ -198,9 +198,7 @@ class GameGazePublisher:
                                  gaze.x, gaze.y, desktop, gaze.radius, active=True)
         else:
             packet = pack_packet(self._sequence + 1, 0.0, now, active=False)
-        if not self._publish(packet):
-            return 'busy'
-        return 'active' if active else 'inactive'
+        return active, self._publish(packet)
 
     def publish_inactive(self, now=None):
         now = time.monotonic() if now is None else now

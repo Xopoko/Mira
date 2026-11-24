@@ -264,9 +264,19 @@ class ClickControllerTests(unittest.TestCase):
         self.c.settings['click_learning']=True;self.c.pause();self.assertEqual(len(self.c.click_history.samples),0)
         self.assertFalse(self.source.started);self.assertEqual(self.c.learning.count,0)
     def test_captured_blink_barrier_reaches_controller(self):
-        self.tick(9.94,sample(9.92));self.tick(9.98,sample(9.96));self.c.phone.invalid_captured=10.00
-        self.tick(10.05,None);self.source.events=[HumanClick(25,72,10.02,10.08)]
-        self.tick(10.10,sample(10.09));self.assertEqual(self.c.learning.count,0)
+        for start, blink in ((10., True), (11., False)):
+            with self.subTest(blink=blink):
+                self.c.click_history.clear()
+                for offset in (.08, .04, .01):
+                    captured = start - offset
+                    self.tick(captured + .005, sample(captured))
+                self.c.phone.invalid_captured = start if blink else None
+                # The missing observation arrives after the click was pressed.
+                self.tick(start + .05, None)
+                self.c.phone.invalid_captured = None
+                self.source.events = [HumanClick(25, 72, start + .02, start + .08)]
+                self.tick(start + .10, sample(start + .09))
+                self.assertEqual(self.c.learning.count, 0 if blink else 1)
     def test_learning_store_undo_keeps_selected_store(self):
         self.c.learning.learn_click(sample(10),(25,72));self.c.undo_learning()
         self.assertEqual(self.c.learning.count,0);self.assertFalse(self.c.learning.click_anchors)

@@ -53,14 +53,26 @@ class PredictionTests(unittest.TestCase):
         self.assertEqual(p.model.learned,0);self.assertEqual(p.gaze_model.learned,0)
 
     def test_duplicate_unsupported_stale_or_mouse_gaze_cannot_create_dwell(self):
-        p=IntentPredictor();g=Gaze(680,220,10,100)
-        for i in range(12):
-            now=10+i*.025;self.assertIsNone(p.predict(scene(now),g,now))
-        for supported,source,stamp in ((False,'iphone',11.),(True,'iphone',9.),(True,'mouse',11.)):
-            q=IntentPredictor()
-            for i in range(12):
-                now=11+i*.025;forecast=q.predict(scene(now),Gaze(680,220,stamp,100,source),now,gaze_supported=supported)
-                self.assertIsNone(forecast)
+        with self.subTest(case='duplicate'):
+            predictor = IntentPredictor()
+            gaze = Gaze(680, 220, 10., 100)
+            for i in range(8):
+                now = 10. + i * .025
+                self.assertIsNone(predictor.predict(scene(now), gaze, now))
+            self.assertEqual(len(predictor.gaze_trail), 1)
+
+        for case, supported, source, lag in (
+            ('unsupported', False, 'iphone', 0.),
+            ('stale', True, 'iphone', .3),
+            ('mouse', True, 'mouse', 0.),
+        ):
+            with self.subTest(case=case):
+                predictor = IntentPredictor()
+                for i in range(12):
+                    now = 11. + i * .025
+                    gaze = Gaze(680, 220, now - lag, 100, source)
+                    self.assertIsNone(predictor.predict(scene(now), gaze, now, gaze_supported=supported))
+                self.assertFalse(predictor.gaze_trail)
 
     def test_replaced_gaze_target_and_own_process_controls_are_rejected(self):
         p=IntentPredictor();

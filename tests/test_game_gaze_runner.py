@@ -13,7 +13,7 @@ class FakePublisher:
     def __init__(self, events=None):
         self.events = events if events is not None else []
         self.calls = []
-        self.result = 'inactive'
+        self.result = (False, True)
     def publish(self, *args, **kwargs):
         self.events.append('publish')
         self.calls.append((args, kwargs))
@@ -73,15 +73,17 @@ class GameGazeSessionTests(unittest.TestCase):
         self.assertFalse(session.running)
         self.assertEqual(phone.polls, 0)
         self.assertTrue(session.start())
-        publisher.result = 'active'
+        publisher.result = (True, True)
         self.assertEqual(session.tick(), 'Gaze live · receiving fresh data')
         self.assertEqual(phone.polls, 1)
         self.assertEqual(events[:4], ['phone.start', 'phone.poll', 'learning.correct', 'publish'])
         self.assertEqual(publisher.calls[0][0], (gaze, measurement, self.bounds, 20.0))
         self.assertTrue(publisher.calls[0][1]['phone_present'])
         self.assertTrue(publisher.calls[0][1]['running'])
-        publisher.result = 'busy'
+        publisher.result = (True, False)
         self.assertEqual(session.tick(), 'Gaze live · output busy, update skipped')
+        publisher.result = (False, False)
+        self.assertNotIn('Gaze live', session.tick())
 
     def test_missing_tracking_is_distinct_from_active_and_stop_closes_in_safe_order(self):
         worker = SimpleNamespace(is_alive=lambda: True, frames=3)

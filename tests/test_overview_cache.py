@@ -4,12 +4,12 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 from PySide6.QtWidgets import QApplication
-from PySide6.QtGui import QImage,QPainter
+from PySide6.QtGui import QColor,QImage,QPainter
 from PySide6.QtCore import QRectF,QPointF,QPoint
 from context_operator.ui.overview_cache import OverviewCache
 from context_operator.ui.light_cache import tile_bounds
 from context_operator.ui.window import SceneCanvas
-from context_operator.core.contracts import Rect,Element,WindowMap,Scene,Focus
+from context_operator.core.contracts import Rect,Element,WindowMap,Scene,Focus,Gaze
 from context_operator.core.fusion import Fusion
 
 APP=QApplication.instance() or QApplication([])
@@ -42,15 +42,24 @@ class OverviewTests(unittest.TestCase):
         c=SimpleNamespace(running=True,scene=Scene(1,10,bounds,(item,),1,windows=(window,)),attention=None,prediction=None,
                           focus=Focus(),fusion=Fusion(),settings={})
         canvas=SceneCanvas(c);canvas.resize(500,200)
+        self.addCleanup(canvas.close)
         image=QImage(500,200,QImage.Format_ARGB32_Premultiplied)
         def frame(now):
             image.fill(0);p=QPainter(image)
             with patch('context_operator.ui.window.time.monotonic',return_value=now):canvas.render(p,QPoint())
             p.end()
-        frame(10.1);before=canvas.overview.builds;frame(10.2);self.assertEqual(canvas.overview.builds,before)
-        frame(11.3);self.assertGreater(canvas.overview.builds,before)
+        c.attention = Gaze(130,115,10.1)
+        frame(10.15)
+        self.assertGreater(canvas.light_cache.builds, 0)
         from context_operator.ui.light_cache import LIGHT_CACHE
-        self.assertIsNot(canvas.light_cache,LIGHT_CACHE);canvas.close()
+        self.assertIsNot(canvas.light_cache, LIGHT_CACHE)
+        c.attention = None
+        background = QColor('#141414')
+        contour = (151, 47)
+        frame(10.2)
+        self.assertNotEqual(image.pixelColor(*contour), background)
+        frame(11.3)
+        self.assertEqual(image.pixelColor(*contour), background)
 
 
 if __name__=='__main__':unittest.main()

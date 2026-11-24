@@ -6,8 +6,8 @@ from types import SimpleNamespace
 from unittest.mock import Mock,patch
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QRect,QPointF
-from PySide6.QtGui import QImage,QPainter,QRegion
-from context_operator.core.contracts import Element,Rect,Scene,WindowMap,Gaze
+from PySide6.QtGui import QImage,QPainter,QPaintEvent,QRegion
+from context_operator.core.contracts import Element,Focus,Rect,Scene,WindowMap,Gaze
 from context_operator.ui.overlay import paint_magnetic_focus,current_focus_target,FocusOverlay,focus_ink
 
 APP=QApplication.instance() or QApplication([])
@@ -39,7 +39,35 @@ class MagneticOverlayTests(unittest.TestCase):
         self.assertEqual(image.pixelColor(250,220).alpha(),0)
 
     def test_switch_erases_old_shape_and_does_not_draw_a_bridge(self):
-        image=self.frame(self.b)
+        win = Mock()
+        win.rect.return_value = self.bounds
+        state = SimpleNamespace(highlight_mode='radial', scene=None, focus_target=None, born={},
+                                last_tick=10., ink=QRegion(), win=win, winId=lambda: 1,
+                                devicePixelRatioF=lambda: 1., rect=lambda: QRect(0, 0, 600, 400),
+                                update=Mock())
+        image = QImage(600, 400, QImage.Format_ARGB32_Premultiplied)
+        image.fill(0)
+
+        def paint_focus(target, now):
+            with patch('context_operator.ui.overlay.time.monotonic', return_value=now):
+                FocusOverlay.sync(state, Focus(target), Gaze(*target.rect.center, now),
+                                  self.scene, highlight_mode='magnetic')
+                FocusOverlay.animate(state)
+                dirty = state.update.call_args.args[0]
+                painter = QPainter(image)
+                painter.setClipRegion(dirty)
+                try:
+                    with patch('context_operator.ui.overlay.QPainter', return_value=painter) as make:
+                        make.CompositionMode_Source = QPainter.CompositionMode_Source
+                        make.CompositionMode_SourceOver = QPainter.CompositionMode_SourceOver
+                        make.Antialiasing = QPainter.Antialiasing
+                        FocusOverlay.paintEvent(state, QPaintEvent(dirty))
+                finally:
+                    painter.end()
+
+        paint_focus(self.a, 10.1)
+        self.assertGreater(image.pixelColor(150,80).alpha(),100)
+        paint_focus(self.b, 10.2)
         self.assertEqual(image.pixelColor(150,80).alpha(),0)
         self.assertEqual(image.pixelColor(250,80).alpha(),0)
         self.assertGreater(image.pixelColor(350,80).alpha(),100)

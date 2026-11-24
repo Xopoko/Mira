@@ -643,7 +643,7 @@ class Controller(QObject):
                     from .providers.game_gaze import GameGazePublisher
                     self.game_gaze_factory=GameGazePublisher
                 self.game_gaze_publisher=self.game_gaze_factory()
-            result=self.game_gaze_publisher.publish(
+            _,written=self.game_gaze_publisher.publish(
                 self.gaze,phone.measurement if phone else None,desktop,now,
                 phone_present=bool(phone),
                 pointer_mode=self.pointer_mode,
@@ -651,7 +651,7 @@ class Controller(QObject):
                 setup=bool(self.setup_close),
                 running=bool(running),
             )
-            if result!='busy':self.game_gaze_unavailable=False
+            if written:self.game_gaze_unavailable=False
         except Exception as exc:
             if not self.game_gaze_unavailable:
                 self.message.emit('Game gaze feed','Unavailable: '+(str(exc) or type(exc).__name__))

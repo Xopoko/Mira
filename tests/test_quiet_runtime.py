@@ -73,7 +73,7 @@ class InMemoryGamePublisher:
             active=active,
         )
         self.packets.append(packet)
-        return 'active' if active else 'inactive'
+        return active, True
 
     def close(self):
         self.closed = True
@@ -143,32 +143,21 @@ class QuietRuntimeTests(unittest.TestCase):
         self.assertEqual(PACKET.unpack(self.publisher.packets[-1])[2], FLAG_ACTIVE)
 
     def test_quiet_does_not_bypass_stale_or_pause_export_gates(self):
-        publisher = InMemoryGamePublisher()
-        stale_sample = measurement(9.70)
-        state = type('PublisherState', (), {})()
-        state.settings = {'quiet_mode': True, 'game_gaze_enabled': True}
-        state.game_gaze_factory = lambda: publisher
-        state.game_gaze_publisher = None
-        state.game_gaze_unavailable = False
-        state.phone = type('Phone', (), {'measurement': stale_sample})()
-        state.gaze = Gaze(25, 12, 9.70, 230.0)
-        state.pointer_mode = False
-        state.mouse_control = False
-        state.setup_close = None
-        state._close_game_gaze = lambda: Controller._close_game_gaze(state)
-        Controller._publish_game_gaze(
-            state, 10.0, desktop=Rect(0, 0, 1000, 700), running=True
-        )
-        self.assertEqual(len(publisher.packets), 1)
-        self.assertEqual(PACKET.unpack(publisher.packets[-1])[2], 0)
+        c = self.controller
+        factory = Mock(return_value=self.publisher)
+        c.game_gaze_factory = factory
+        desktop = c.win.bounds()
+        c.phone.measurement = measurement(9.70)
+        c.gaze = Gaze(25, 12, 9.70, 230.)
+        c._publish_game_gaze(9.75, desktop=desktop, running=True)
+        c._publish_game_gaze(10., desktop=desktop, running=True)
+        factory.assert_called_once_with()
+        self.assertEqual([PACKET.unpack(packet)[2] for packet in self.publisher.packets], [FLAG_ACTIVE, 0])
 
-        Controller._publish_game_gaze(
-            state, 10.01, desktop=Rect(0, 0, 1000, 700), running=False
-        )
-        Controller._close_game_gaze(state)
-        self.assertTrue(publisher.closed)
-        self.assertIsNone(state.game_gaze_publisher)
-        self.assertEqual(len(publisher.packets), 1)
+        c.pause()
+        self.assertTrue(self.publisher.closed)
+        self.assertIsNone(c.game_gaze_publisher)
+        self.assertEqual(len(self.publisher.packets), 2)
 
 
 if __name__ == '__main__':

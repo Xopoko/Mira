@@ -28,7 +28,12 @@ class CacheTests(unittest.TestCase):
         self.assertGreater(b.pixelColor(100,80).blue(),b.pixelColor(100,80).red())
         moved=render(cache,elements=[('a',QRectF(320,80,60,50))]);self.assertEqual(moved.pixelColor(100,80).alpha(),0)
     def test_bounded_cache_and_dpr_separation(self):
-        cache=LightCache(max_pixels=1_000_000);render(cache);render(cache,dpr=1.25);render(cache,dpr=1.5)
+        cache = LightCache(max_pixels=1_000_000)
+        render(cache)
+        for dpr in (1.25, 1.5):
+            with self.subTest(dpr=dpr):
+                actual = render(cache, dpr=dpr)
+                self.assertEqual(actual, render(LightCache(), dpr=dpr))
         for x in range(150,1200,130):render(cache,QPointF(x,110))
         self.assertLessEqual(cache.pixels,cache.max_pixels);self.assertLessEqual(len(cache.images),16)
         self.assertEqual(cache.pixels,sum(i.width()*i.height() for i in cache.images.values()))

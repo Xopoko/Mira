@@ -2,6 +2,7 @@ import unittest
 import time
 from unittest.mock import Mock,patch
 from contextlib import nullcontext
+from dataclasses import replace
 from types import SimpleNamespace
 from context_operator.providers.windows import WindowsOutput
 from context_operator.providers.uia_reader import WindowReader
@@ -153,19 +154,25 @@ class OutputTests(unittest.TestCase):
             output.execute(Intent('type_text',text='Hello'),None,scene)
         output.win.activate.assert_not_called();output.win.send.assert_not_called()
     def test_named_dictation_focuses_field_before_unicode(self):
-        output=WindowsOutput.__new__(WindowsOutput);output.win=Mock();output.win.shift_down.return_value=False
-        output.semantic=Mock(return_value=False);output.is_active=lambda:True
-        output.validate_control=Mock();output.validate_visual=Mock()
-        win=output.win;win.u.IsWindow.return_value=True;win.pid.return_value=7
-        win.rect.return_value=Rect(0,0,800,600);win.at.return_value=12;win.foreground.return_value=12
-        target=Element('edit','Name','Edit',Rect(60,40,150,40),12,pid=7)
-        scene=Scene(1,time.monotonic(),Rect(0,0,800,600),(target,),12,window_rect=Rect(0,0,800,600))
+        output, button, scene = self.pointer_click_fixture()
+        target = replace(button, id='edit', label='Name', role='Edit')
+        scene = replace(scene, elements=(target,))
+        win = output.win
+        win.foreground = Mock(return_value=12)
+        calls = Mock()
+        calls.attach_mock(win.send, 'send')
+        calls.attach_mock(output.validate_control, 'validate')
         with patch('context_operator.providers.windows.time.sleep'):
-            output.execute(Intent('type_text',text='Hello',target_id='edit'),target,scene)
-        self.assertEqual(win.send.call_count,2)
-        self.assertEqual(win.mouse.call_args_list[0].args,(2,))
-        self.assertEqual(win.mouse.call_args_list[1].args,(4,))
-        output.validate_control.assert_any_call(target,focused=True)
+            output.execute(Intent('type_text', text='Hi 🙂', target_id=target.id), target, scene)
+        self.assertEqual([entry[0] for entry in calls.mock_calls], ['validate', 'send', 'validate', 'send'])
+        self.assertEqual(calls.mock_calls[2].args, (target,))
+        self.assertEqual(calls.mock_calls[2].kwargs, {'focused': True})
+        click, keys = [entry.args[0] for entry in win.send.call_args_list]
+        self.assertEqual([(e.type, e.mi.dwFlags) for e in click], [(0, 0xC001), (0, 2), (0, 4)])
+        self.assertEqual((click[0].mi.dx, click[0].mi.dy), (4610, 3644))
+        self.assertEqual([(e.type, e.ki.vk, e.ki.scan, e.ki.flags) for e in keys],
+                         [(1, 0, unit, flags) for unit in (0x48, 0x69, 0x20, 0xD83D, 0xDE42)
+                          for flags in (4, 6)])
     def test_failed_field_focus_never_types(self):
         output=WindowsOutput.__new__(WindowsOutput);output.win=Mock();output.win.shift_down.return_value=False;output.validate_visual=Mock()
         output.semantic=Mock(return_value=False);output.is_active=lambda:True
@@ -176,13 +183,22 @@ class OutputTests(unittest.TestCase):
             output.execute(Intent('type_text',text='Hello',target_id='edit'),e,s)
         self.assertEqual(w.send.call_count,1)
     def test_uia_scan_rejects_window_move_mid_scan(self):
-        provider=WindowReader.__new__(WindowReader)
-        provider.win=Mock();provider.uia=Mock();provider.cache=Mock();provider.condition=Mock();provider.secret_condition=Mock()
-        w=provider.win;w.foreground.return_value=12;w.pid.return_value=7;w.u.IsWindow.return_value=True;w.u.FindWindowW.return_value=0
-        w.title.return_value='Fixture';w.bounds.return_value=Rect(0,0,800,600)
-        w.rect.side_effect=[Rect(0,0,800,600),Rect(20,0,800,600)]
-        root=Mock();root.FindAllBuildCache.return_value.Length=0
-        provider.uia.ElementFromHandle.return_value=root
-        with self.assertRaises(RuntimeError):provider.scan(WindowMap(12,7,Rect(0,0,800,600),0.,title='Fixture'))
+        provider = WindowReader.__new__(WindowReader)
+        provider.win = Mock()
+        provider.uia = Mock()
+        provider.cache = provider.condition = provider.secret_condition = Mock()
+        win = provider.win
+        win.pid.return_value = 7
+        win.u.IsWindowVisible.return_value = True
+        win.u.IsIconic.return_value = False
+        root = provider.uia.ElementFromHandle.return_value
+        root.FindFirst.return_value = None
+        root.FindAllBuildCache.return_value.Length = 0
+        bounds = Rect(0, 0, 800, 600)
+        surface = WindowMap(12, 7, bounds, 0., title='Fixture')
+        win.rect.side_effect = [bounds, bounds, bounds, Rect(20, 0, 800, 600)]
+        self.assertEqual(provider.scan(surface).rect, bounds)
+        with self.assertRaisesRegex(RuntimeError, 'Window changed during scan'):
+            provider.scan(surface)
 
 if __name__=='__main__':unittest.main()

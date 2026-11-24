@@ -11,9 +11,10 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QFontDatabase
 
 from context_operator.controller import Controller
-from context_operator.core.contracts import Element, Focus, Gaze, Intent, Rect, Scene
+from context_operator.core.click_learning import HumanClick
+from context_operator.core.contracts import Element, Focus, Gaze, GazeMeasurement, Intent, Rect, Scene
 from context_operator.core.webcam import GazeArbitrator, WebcamObservation
-from context_operator.personalization.webcam import TRAIN_TARGETS
+from context_operator.personalization.webcam import TRAIN_TARGETS, WebcamProfile
 from context_operator.providers.webcam import SCHEMA, WebcamGaze, decode_observation
 from context_operator.settings import DEFAULTS
 from context_operator.ui.webcam_setup import WebcamSetupWindow
@@ -59,53 +60,30 @@ class ArbitrationTests(unittest.TestCase):
         self.assertEqual(arbitrator.count, 0)
 
     def test_provider_no_face_stale_and_future_clear_smoothed_gaze(self):
-        class Worker:
-            def __init__(self):
-                self.observation = WebcamObservation(1, 40., (.1,) * 8)
-                self.error = ''
-                self.ready = False
-            def stop(self): pass
-
-        worker = Worker()
-        provider = WebcamGaze(Rect(0, 0, 1000, 800), 'camera-fixture', calibrated=False,
-                              worker_factory=lambda: worker)
+        bounds = Rect(0, 0, 1000, 800)
+        targets = [(x - .5, y - .5, 0., 0., 0., .5, .5, .25) for x, y in TRAIN_TARGETS]
+        features = targets[0]
+        provider = WebcamGaze(bounds, 'camera-fixture', calibrated=False)
+        provider.profile = WebcamProfile.fit(targets, TRAIN_TARGETS, bounds, provider.device_id)
         provider.active = True
-        provider.worker = worker
-        provider.smoother.update((100., 100.), 40.)
-        worker.observation = WebcamObservation(2, 40.1, (), 'blink')
-        self.assertEqual(provider.poll(40.11), (None, 'blink'))
-        self.assertIsNone(provider.smoother.point)
-        worker.observation = WebcamObservation(3, 39.7, (.1,) * 8)
-        self.assertIsNone(provider.poll(40.)[0])
-        worker.observation = WebcamObservation(4, 40.2, (.1,) * 8)
-        self.assertIsNone(provider.poll(40.)[0])
-        provider.stop()
-
-    def test_invalid_frame_barrier_rejects_late_worker_result(self):
-        class Worker:
-            def __init__(self):
-                self.observation = WebcamObservation(1, 40.1, (.1,) * 8)
-                self.error = ''
-                self.ready = True
-            def stop(self): pass
-
-        class InvalidVideoFrame:
-            def isValid(self): return False
-
-        worker = Worker()
-        provider = WebcamGaze(Rect(0, 0, 1000, 800), 'fixture-camera', calibrated=False,
-                              worker_factory=lambda: worker)
-        provider.active = True
-        provider.worker = worker
-        with patch('context_operator.providers.webcam.time.monotonic', return_value=40.2):
-            provider._frame(InvalidVideoFrame())
-        # An inference already in flight completes after the invalid camera frame.
-        worker.observation = WebcamObservation(1, 40.1, (.1,) * 8)
-        latest = provider.latest()
-        self.assertFalse(latest.features)
-        self.assertEqual('Camera frame unavailable', latest.reason)
-        self.assertIsNone(provider.poll(40.21)[0])
-        provider.stop()
+        provider.worker = worker = Mock(ready=True, error='')
+        self.addCleanup(provider.stop)
+        waiting = 'Waiting for fresh webcam gaze data'
+        for i, (age, row, reason, status) in enumerate((
+            (.01, (), 'No face', 'No face'),
+            (.01, (), 'blink', 'blink'),
+            (.30, features, '', waiting),
+            (-.20, features, '', waiting),
+        )):
+            with self.subTest(status=reason, age=age):
+                now = 40. + i
+                worker.observation = WebcamObservation(2 * i + 1, now - .11, features)
+                gaze, _ = provider.poll(now - .10)
+                self.assertEqual(gaze.source, 'webcam')
+                self.assertIsNotNone(provider.smoother.point)
+                worker.observation = WebcamObservation(2 * i + 2, now - age, row, reason)
+                self.assertEqual(provider.poll(now), (None, status))
+                self.assertIsNone(provider.smoother.point)
 
     def test_worker_response_contract_rejects_malformed_rows(self):
         valid = {'schema': SCHEMA, 'seq': 7, 'captured': 50.25,
@@ -165,17 +143,29 @@ class ControllerWebcamTests(unittest.TestCase):
         c.webcam_factory = Mock(return_value=webcam)
         c.toggle_webcam()
         c.gaze_source_mode = 'iphone'
-        c.gaze = Gaze(100., 100., 59., 50., 'iphone')
-        c.focus = Focus(Element('old', 'Old button', 'Button', Rect(80, 80, 40, 40)))
+        c.attention = c.gaze = Gaze(100., 100., 59.9, 50., 'iphone')
+        target = Element('old', 'Old button', 'Button', Rect(80, 80, 40, 40), 1)
+        c.scene = Scene(1, 59.9, webcam.bounds, (target,), 1)
+        c.focus = Focus(target)
+        c.microphone = True
+        c.command = Mock()
+        utterance = {'utteranceId': 'old'}
+        with patch('context_operator.controller.time.monotonic', return_value=59.95):
+            c._speech(dict(utterance, type='speech_start'), c.voice_generation)
+        self.assertEqual(c.speech_focus['old'], (c.focus, c.gaze))
         c.dwell_id = ('window', 'rect')
         source_epoch = c.gaze_source_epoch
         for stamp in times:
+            c.gaze = None
             c._select_gaze_source(stamp + .01)
         self.assertEqual(c.gaze_source_mode, 'webcam')
         self.assertIsNone(c.focus.target)
         self.assertIsNone(c.dwell_id)
         self.assertGreater(c.gaze_source_epoch, source_epoch)
         self.assertEqual(c.gaze.source, 'webcam')
+        self.assertNotIn('old', c.speech_focus)
+        c._speech(dict(utterance, type='final', text='click'), c.voice_generation)
+        c.command.assert_not_called()
         c.pause()
         self.assertTrue(webcam.stopped)
         self.assertIsNone(c.webcam)
@@ -186,14 +176,38 @@ class ControllerWebcamTests(unittest.TestCase):
 
     def test_webcam_points_never_enter_phone_click_learning(self):
         c = self.controller
-        c.phone = None
-        c.gaze = Gaze(400., 300., time.monotonic(), 50., 'webcam')
-        c.click_history.observe = Mock()
-        c.learning.learn_click = Mock(return_value=True)
-        events = [Mock(x=400, y=300, captured=time.monotonic(), released=time.monotonic())]
-        self.assertFalse(c._learn_clicks(None, time.monotonic(), events))
-        c.click_history.observe.assert_not_called()
-        c.learning.learn_click.assert_not_called()
+        c.running = True
+        c.settings['click_learning'] = True
+        c.learning.key = 'phone-fixture'
+        c.phone = phone = Mock(measurement=None, invalid_captured=None, validation_radius=50.)
+        before_click = (70., 70.06, 70.13, 70.19, 70.25, 70.31)
+        c.webcam = FakeWebcam(c.win.bounds(), 'fixture',
+            [Gaze(400., 300., stamp, 50., 'webcam') for stamp in (*before_click, 70.4)])
+        with patch.object(c.clicks, 'drain', return_value=[]) as drain, \
+             patch.object(c.learning, 'learn_click', return_value=True) as learn:
+            for start, stamps, source in ((70., before_click, 'webcam'),
+                                          (71., (71.13, 71.19, 71.25, 71.31), 'iphone')):
+                with self.subTest(source=source):
+                    def tick(stamp):
+                        phone.measurement = (GazeMeasurement(stamp, (0.,) * 22, (400., 300.))
+                                             if source == 'iphone' else None)
+                        gaze = Gaze(400., 300., stamp, 50.) if phone.measurement else None
+                        phone.poll.return_value = (gaze, 'iPhone connected', 60)
+                        with patch('context_operator.controller.time.monotonic', return_value=stamp + .01):
+                            c.tick()
+
+                    drain.return_value = []
+                    for stamp in stamps:
+                        tick(stamp)
+                    self.assertEqual(c.gaze.source, source)
+                    drain.return_value = [HumanClick(403, 301, start + .33, start + .38)]
+                    tick(start + .40)
+                    if source == 'webcam':
+                        learn.assert_not_called()
+                        self.assertEqual(c.click_counts['quality'], 1)
+                    else:
+                        learn.assert_called_once()
+                        self.assertEqual(c.click_counts['accepted'], 1)
 
     def test_old_source_epoch_cannot_queue_an_action(self):
         c = self.controller
@@ -201,10 +215,19 @@ class ControllerWebcamTests(unittest.TestCase):
         c.busy = True
         old_epoch = c.gaze_source_epoch
         c._revoke_gaze_target()
-        c._decision(Intent('click'), Scene(1, time.monotonic(), Rect(0, 0, 1000, 800), ()),
-                    c.generation, time.monotonic(), source_epoch=old_epoch)
-        self.assertFalse(c.busy)
-        self.assertFalse(c.output_pending)
+        now = time.monotonic()
+        target = Element('button', 'Button', 'Button', Rect(80, 80, 40, 40), 1)
+        c.scene = Scene(1, now, c.win.bounds(), (target,), 1)
+        intent = Intent('click', target_id=target.id)
+        with patch('context_operator.controller.threading.Thread') as dispatch:
+            c._decision(intent, c.scene, c.generation, now, source_epoch=old_epoch)
+            dispatch.assert_not_called()
+            self.assertFalse(c.busy)
+            self.assertFalse(c.output_pending)
+            c._decision(intent, c.scene, c.generation, now, source_epoch=c.gaze_source_epoch)
+            dispatch.assert_called_once()
+            dispatch.return_value.start.assert_called_once_with()
+            self.assertTrue(c.output_pending)
         c.output.execute.assert_not_called()
 
     def test_source_change_after_queue_prevents_dispatch(self):

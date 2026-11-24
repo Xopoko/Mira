@@ -190,10 +190,28 @@ class LifecycleTests(unittest.TestCase):
             c._decision(Intent('click',target_id=self.el.id),self.scene,c.generation,now,source_epoch=source_epoch)
             dispatch.assert_not_called()
     def test_queued_speech_cannot_restart_after_pause(self):
-        self.c.voice_generation=3;self.c.microphone=True
-        self.c.received_speech.emit({'type':'final','text':'click'},3)
-        self.c.pause();self.c._speech({'type':'final','text':'click'},3)
-        self.assertFalse(self.c.running)
+        c = self.c
+        c.voice_generation = 3
+        c.microphone = True
+        c.command = Mock(wraps=c.command)
+        c.start = Mock()
+        delivered = Mock()
+        c.received_speech.connect(delivered, Qt.ConnectionType.QueuedConnection)
+        event = {'type': 'final', 'utteranceId': 1, 'text': 'open Plus'}
+        worker = threading.Thread(target=c.received_speech.emit, args=(event, 3))
+        worker.start()
+        worker.join(1)
+        self.assertFalse(worker.is_alive())
+        delivered.assert_not_called()
+        c.command.assert_not_called()
+
+        c.pause()
+        APP.processEvents()
+        delivered.assert_called_once_with(event, 3)
+        c.start.assert_not_called()
+        c.command.assert_not_called()
+        c.output.execute.assert_not_called()
+        self.assertFalse(c.running)
     def test_speech_without_onset_target_never_uses_later_focus(self):
         self.c.voice_generation=3;self.c.microphone=True
         self.c._speech({'type':'speech_start','utteranceId':1},3)

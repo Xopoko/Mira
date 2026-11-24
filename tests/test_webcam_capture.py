@@ -117,9 +117,12 @@ class CaptureTests(unittest.TestCase):
         with patch('context_operator.providers.webcam.time.monotonic',return_value=10.):
             self.provider._frame(QVideoFrame())
         self.worker.observation=WebcamObservation(1,9.99,(0.,)*8)
-        self.assertFalse(self.provider.latest().features)
-        self.worker.observation=WebcamObservation(2,10.01,(0.,)*8)
-        self.assertEqual(len(self.provider.latest().features),8)
+        late = self.provider.latest()
+        self.assertFalse(late.features)
+        self.assertEqual(late.reason, 'Camera frame unavailable')
+        self.assertEqual(self.provider.poll(10.005), (None, 'Camera frame unavailable'))
+        self.worker.observation = fresh = WebcamObservation(2,10.01,(0.,)*8)
+        self.assertEqual(self.provider.latest(), fresh)
 
     def test_contradictory_status_and_duplicate_keys_rejected(self):
         packet={'schema':'contextoperator.webcam.v1','seq':1,'captured':10.,'features':[0.]*8,'reason':'blink'}

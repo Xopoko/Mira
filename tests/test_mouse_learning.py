@@ -1,6 +1,7 @@
 import os
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 import json,tempfile,unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import Mock,patch
 import numpy as np
@@ -93,8 +94,26 @@ class MouseControllerTests(unittest.TestCase):
         self.c.win.cursor.return_value=(830,120);self.c.win.at.return_value=2;self.tick(100.1,True);self.assertIsNone(self.c.focus.target)
         self.c.win.at.return_value=1;self.tick(104,True);self.assertIsNone(self.c.focus.target)
     def test_cursor_dwell_does_not_click_and_pause_clears_attention(self):
-        self.c.settings['dwell_enabled']=True;self.c.command=Mock();self.tick(100,True);self.tick(102,True)
-        self.c.command.assert_not_called();self.c.pause();self.assertIsNone(self.c.attention)
+        self.c.settings.update(dwell_enabled=True, dwell_ms=700)
+        self.c.command = Mock()
+        self.c.win.cursor.return_value = self.a.rect.center
+        for mouse, start in ((True, 100.), (False, 102.)):
+            with self.subTest(mouse=mouse):
+                for offset in (0., .1, .2, .3, .4, .5, .6, .65, .8):
+                    now = start + offset
+                    fresh = replace(self.a, captured=now)
+                    self.c.scene = replace(self.c.scene, captured=now, elements=(fresh,))
+                    self.tick(now, mouse)
+                    self.assertEqual(self.c.focus.target, fresh)
+                    if offset < .7:
+                        self.c.command.assert_not_called()
+                if mouse:
+                    self.c.command.assert_not_called()
+                else:
+                    self.c.command.assert_called_once_with('click')
+        self.assertIsNotNone(self.c.attention)
+        self.c.pause()
+        self.assertIsNone(self.c.attention)
     def test_shift_voice_uses_mouse_at_phrase_onset(self):
         self.tick(100,True);self.c.microphone=True;self.c.voice_generation=9
         with patch('context_operator.controller.time.monotonic',return_value=100):
