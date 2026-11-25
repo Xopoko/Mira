@@ -29,7 +29,8 @@ w=Window(c);w.refresh_timer.stop();w.show();app.processEvents()
 review=Path('.impeccable/review');review.mkdir(parents=True,exist_ok=True)
 assert w.gaze_heading.text()=='Can’t find iPhone'
 assert w.gaze_value.text()==WIFI_PHONE_NEXT_STEP and w.gaze_btn.text()=='Try again'
-assert w.rail_sources['iPhone'][0].state=='hold'
+assert w.sources['iPhone'][0].state=='hold' and w.state_pill.word=='Not connected'
+assert w.canvas.blocked and w.canvas.idle[0]=='Can’t find iPhone' and w.control_panel.isHidden()
 assert w.phone_settings_button.isVisible()
 assert w.grab().save(str(review/'windows-overview-phone-error.png'))
 w.phone_settings_button.click();app.processEvents()

@@ -9,7 +9,7 @@ from unittest.mock import patch
 from PIL import Image, ImageDraw, ImageFont
 from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtGui import QColor, QFontDatabase, QImage, QPainter
-from PySide6.QtWidgets import QApplication, QFrame
+from PySide6.QtWidgets import QApplication
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -18,10 +18,10 @@ from context_operator import settings
 from context_operator.core.contracts import Element, Gaze, Rect, Scene
 from context_operator.core.fusion import Fusion
 from context_operator.ui.overlay import paint_scene_light
+from context_operator.ui.theme import GROUND, LINE_STRONG, MUTED, TEXT, WAITING
 
 
 FONTS = Path(os.environ.get('WINDIR', 'C:/Windows')) / 'Fonts'
-BACKGROUND = '#141414'
 PRACTICE_SIZE = (1120, 582)
 GAZE_STOPS = (('Top left', 640), ('Plus', 640), ('Top right', 400), ('Clock', 400), ('Reset', 720))
 
@@ -32,7 +32,7 @@ def prepare_practice(window):
     window.open_gaze_practice()
     page = window.stack.currentWidget().widget()
     stage = window.practice_buttons['Plus'].parentWidget()
-    layout = page.layout()
+    layout = stage.parentWidget().layout()
 
     def hide_widgets(item):
         if widget := item.widget():
@@ -44,13 +44,10 @@ def prepare_practice(window):
     # The demo uses the title, controls and targets above the practice exercises.
     while layout.count() > layout.indexOf(stage) + 1:
         hide_widgets(layout.takeAt(layout.count() - 1))
-    margins = layout.contentsMargins()
+    margins = page.layout().contentsMargins()
     margins.setBottom(14)
-    layout.setContentsMargins(margins)
+    page.layout().setContentsMargins(margins)
     window.content_status.hide()
-    sidebar = window.findChild(QFrame, 'sidebar').layout()
-    while sidebar.count() > len(window.nav) + 3:  # brand, spacer, navigation, stretch
-        hide_widgets(sidebar.takeAt(sidebar.count() - 1))
     window.setMinimumHeight(0)
     window.resize(*PRACTICE_SIZE)
     window.setFocus()
@@ -93,15 +90,15 @@ def target_point(element):
 
 def render_gif(output, base, elements, fusion):
     targets = {element.id: element for element in elements}
-    caption = Image.new('RGB', (960, 45), BACKGROUND)
+    caption = Image.new('RGB', (960, 45), GROUND)
     draw = ImageDraw.Draw(caption)
-    draw.ellipse((21, 17, 31, 27), fill='#ffbd58')
+    draw.ellipse((21, 17, 31, 27), fill=WAITING)
     font = ImageFont.truetype(FONTS / 'segoeui.ttf', 19)
-    draw.text((43, 12), 'Simulated gaze input', font=font, fill='#d2d2ce')
+    draw.text((43, 12), 'Simulated gaze input', font=font, fill=MUTED)
     frames, durations = [], []
 
     def add_frame(image, duration):
-        frame = Image.new('RGB', (960, 543), BACKGROUND)
+        frame = Image.new('RGB', (960, 543), GROUND)
         frame.paste(image.resize((960, 498), Image.Resampling.LANCZOS))
         frame.paste(caption, (0, 498))
         frames.append(frame)
@@ -134,22 +131,22 @@ def rounded_mask(size, radius):
 
 
 def render_social(output, practice):
-    card = Image.new('RGB', (1280, 640), BACKGROUND)
+    card = Image.new('RGB', (1280, 640), GROUND)
     with Image.open(settings.ASSETS / 'icon.png') as source:
         icon = source.convert('RGBA').resize((48, 48), Image.Resampling.LANCZOS)
     card.paste(icon, (56, 92), icon)
     draw = ImageDraw.Draw(card)
     bold = FONTS / 'segoeuib.ttf'
-    draw.text((112, 87), 'Mira', font=ImageFont.truetype(bold, 36), fill='#f2f2ee')
+    draw.text((112, 87), 'Mira', font=ImageFont.truetype(bold, 36), fill=TEXT)
     headline = ImageFont.truetype(bold, 58)
     for index, line in enumerate(('TrueDepth', 'gaze tracking', 'for Windows')):
-        draw.text((58, 161 + index * 69), line, font=headline, fill='#f2f2ee')
+        draw.text((58, 161 + index * 69), line, font=headline, fill=TEXT)
     tagline = ImageFont.truetype(FONTS / 'segoeui.ttf', 23)
-    draw.text((60, 423), 'See where you’re looking.', font=tagline, fill='#bdbdb7')
+    draw.text((60, 423), 'See where you’re looking.', font=tagline, fill=MUTED)
 
     size = (705, 454)
     panel = practice.resize((size[0] - 2, size[1] - 2), Image.Resampling.LANCZOS)
-    bordered = Image.new('RGB', size, '#8c8c85')
+    bordered = Image.new('RGB', size, LINE_STRONG)
     bordered.paste(panel, (1, 1), rounded_mask(panel.size, 13))
     card.paste(bordered, (510, 93), rounded_mask(size, 14))
     card.save(output)
@@ -177,7 +174,7 @@ def main():
             window = Window(controller)
             window.refresh_timer.stop()
             try:
-                window.resize(1120, 790)
+                window.resize(1180, 780)
                 window.show()
                 window.setFocus()
                 app.processEvents()

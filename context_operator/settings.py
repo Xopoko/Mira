@@ -12,7 +12,6 @@ DEFAULTS={'radius':230,'stability_ms':110,'microphone':'',
           'dwell_enabled':False,'dwell_ms':1200,'fast_voice':True,'speech_silence_ms':280,
           'click_learning':True,'anticipation':True,
           'phone_transport':'wifi','phone_wifi_host':'',
-          'show_scene_map':False,
           'webcam_device_id':'','webcam_device_name':'',
           'game_gaze_enabled':False}
 

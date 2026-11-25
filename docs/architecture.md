@@ -103,7 +103,7 @@ command.
   a stale source, drops the lock. The lock is never fed back into gaze
   measurements or click labels.
 
-`quiet_mode` hides the overlay and the focus panel in **Overview**. It does
+`quiet_mode` hides the overlay and the live preview in **Overview**. It does
 not pause tracking, click learning or the [game gaze feed](game-gaze.md), and
 gaze setup still shows its targets. See
 [Overlay rendering](overlay-performance.md) for how the overlay is painted and

@@ -67,7 +67,7 @@ final class EyeTracker: NSObject, ObservableObject, ARSessionDelegate {
     @Published var depthText = "Not checked yet"
     @Published var rateText = "Off"
     @Published var connectionText = "Not connected"
-    let plan = PlanModel()
+    let preview = PreviewModel()
     private let session = ARSession()
     private let server = USBServer()
     private let wifiServer = WiFiNumericServer()
@@ -83,10 +83,10 @@ final class EyeTracker: NSObject, ObservableObject, ARSessionDelegate {
     private var priorIdleTimerDisabled: Bool?
     private var priorBrightness: CGFloat?
     private var startGeneration = 0
-    // Live plan state; touched only on `queue`.
-    private var planEnabled = true
-    private var lastPlan = 0.0
-    private var smoothPlan: PlanPose?
+    // Live preview state; touched only on `queue`.
+    private var previewEnabled = true
+    private var lastPreview = 0.0
+    private var smoothPreview: PreviewPose?
 
     var cameraBlocked: Bool {
         let access = AVCaptureDevice.authorizationStatus(for: .video)
@@ -176,7 +176,7 @@ final class EyeTracker: NSObject, ObservableObject, ARSessionDelegate {
         priorBrightness = UIScreen.main.brightness
         UIScreen.main.brightness = min(UIScreen.main.brightness, 0.01)
         screenDimmed = true
-        queue.async { self.planEnabled = false }
+        queue.async { self.previewEnabled = false }
     }
 
     func revealScreen() {
@@ -186,7 +186,7 @@ final class EyeTracker: NSObject, ObservableObject, ARSessionDelegate {
         }
         screenDimmed = false
         dimGeneration += 1
-        queue.async { self.planEnabled = true }
+        queue.async { self.previewEnabled = true }
     }
 
     func start() {
@@ -225,7 +225,7 @@ final class EyeTracker: NSObject, ObservableObject, ARSessionDelegate {
                     self.sequence = 0
                     self.depthFrames = 0
                     self.lastFrame = 0
-                    self.smoothPlan = nil
+                    self.smoothPreview = nil
                     self.acceptingFrames = true
                 }
                 self.computerConnected = false
@@ -258,7 +258,7 @@ final class EyeTracker: NSObject, ObservableObject, ARSessionDelegate {
         tracked = false
         computerConnected = false
         depthReceived = false
-        plan.pose = nil
+        preview.pose = nil
         status = "Tracking stopped"
         rateText = "Off"
         depthText = "Not checked yet"
@@ -293,28 +293,28 @@ final class EyeTracker: NSObject, ObservableObject, ARSessionDelegate {
         } else {
             server.update(packet: packet, captured: frame.timestamp)
         }
-        if planEnabled && now-lastPlan >= 1.0/30.0 {
-            lastPlan = now
-            var next: PlanPose?
+        if previewEnabled && now-lastPreview >= 1.0/30.0 {
+            lastPreview = now
+            var next: PreviewPose?
             if let face = face, valid {
                 let view = frame.camera.viewMatrix(for: .portrait) * face.transform
                 func position(_ m: simd_float4x4) -> SIMD3<Float> { SIMD3(m.columns.3.x, m.columns.3.y, m.columns.3.z) }
                 let look = view * SIMD4<Float>(face.lookAtPoint, 1)
-                next = PlanPose.make(head: position(view),
-                                     forward: SIMD3(view.columns.2.x, view.columns.2.y, view.columns.2.z),
-                                     leftEye: position(view * face.leftEyeTransform),
-                                     rightEye: position(view * face.rightEyeTransform),
-                                     lookAt: SIMD3(look.x, look.y, look.z))
+                next = PreviewPose.make(head: position(view),
+                                        up: SIMD3(view.columns.1.x, view.columns.1.y, view.columns.1.z),
+                                        leftEye: position(view * face.leftEyeTransform),
+                                        rightEye: position(view * face.rightEyeTransform),
+                                        lookAt: SIMD3(look.x, look.y, look.z))
             }
-            if let next = next, let previous = smoothPlan {
-                smoothPlan = previous.blended(toward: next, amount: 0.35)
+            if let next = next, let previous = smoothPreview {
+                smoothPreview = previous.blended(toward: next, amount: 0.35)
             } else {
-                smoothPlan = next
+                smoothPreview = next
             }
-            let pose = smoothPlan
+            let pose = smoothPreview
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, self.running else { return }
-                self.plan.pose = pose
+                self.preview.pose = pose
             }
         }
         if now-lastUI > 0.2 {

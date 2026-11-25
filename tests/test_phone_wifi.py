@@ -201,7 +201,6 @@ class ConnectionSettingsTests(unittest.TestCase):
             path=Path(directory)/'settings.json'
             fresh=load()
             self.assertEqual((fresh['phone_transport'],fresh['phone_wifi_host']),('wifi',''))
-            self.assertFalse(fresh['show_scene_map'])
             self.assertFalse(path.exists())
             saved='{"phone_transport":"usb","phone_wifi_host":"192.168.2.42"}'
             path.write_text(saved,encoding='utf-8')

@@ -1,7 +1,7 @@
 # Refine gaze using clicks
 
 Click learning is on by default and works while an iPhone with a gaze setup
-is connected. **Profile → Click learning → Refine gaze using clicks** turns it
+is connected. **Calibration → Advanced → Click learning → Refine gaze using clicks** turns it
 off. **Details** shows how many clicks were used, how many were skipped and
 the latest status.
 

@@ -10,7 +10,7 @@ This guide covers the connection itself. First
    Ethernet. Guest networks may block connections between devices.
 2. Open Mira on iPhone and tap **Start Tracking**. Grant camera and local
    network access if prompted. If you previously set the companion to USB,
-   switch it back to **Wi-Fi** in the top-right menu first.
+   open **Connection** and set **Connect over** back to **Wi-Fi** first.
 3. On the PC, select **Set up iPhone** in **Overview**, then select
    **Connect iPhone** in the setup window. If you already have a gaze
    profile, select **Connect iPhone** directly in **Overview**. Mira looks

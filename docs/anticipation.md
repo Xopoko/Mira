@@ -15,7 +15,7 @@ map available before the press. The gaze model learns only from clicks near the
 fixation. [Click learning](click-learning.md) is a separate feature that refines
 screen coordinates.
 
-**Profile → Next target prediction → Details** compares the current and
+**Calibration → Advanced → Next target prediction → Details** compares the current and
 initial rankings with actual clicks, separately for the mouse and gaze models.
 The comparison uses predictions made at
 least 150 ms before the press, including predictions whose outlines were hidden.

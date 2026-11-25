@@ -15,7 +15,8 @@ from PySide6.QtWidgets import QApplication, QComboBox, QPushButton
 from PySide6.QtGui import QFontDatabase
 from context_operator.controller import Controller
 from context_operator.core.contracts import Gaze, Intent
-from context_operator.settings import DEFAULTS, LOCAL, load
+from context_operator.settings import DEFAULTS, LOCAL
+from context_operator.ui.theme import ACCENT_FILL, FOCUS
 from context_operator.ui.window import Window
 from context_operator.ui.setup import SetupWindow
 from context_operator.personalization import ProfileStore
@@ -54,34 +55,36 @@ QTest.keyClick(window.practice_buttons['Top left'], Qt.Key_Tab)
 assert window.practice_buttons['Plus'].hasFocus()
 window.resize(1220, 900)
 app.processEvents()
-assert not window.editor.isVisible() and not window.log.isVisible()
+assert not window.editor.isVisible() and not window.log.isVisible() and not window.practice_command.isVisible()
 window.practice_buttons['Clock'].setFocus()
 QTest.keyClick(window.practice_buttons['Clock'],Qt.Key_Tab)
+assert window.practice_tools_button.hasFocus()
+window.practice_tools_button.click()
+QTest.keyClick(window.practice_tools_button,Qt.Key_Tab)
 assert window.practice_command.hasFocus()
 window.practice_command.setText('click')
 QTest.keyClick(window.practice_command,Qt.Key_A,Qt.ControlModifier)
 assert window.practice_command.selectedText()=='click'
 field=window.practice_command.grab().toImage()
-assert field.pixelColor(field.width()//2,0).name()=='#3d6bff'
-assert any(field.pixelColor(x,field.height()//2).name()=='#2c4fd1' for x in range(10,45))
+assert field.pixelColor(field.width()//2,0).name()==FOCUS.lower()
+assert any(field.pixelColor(x,field.height()//2).name()==ACCENT_FILL.lower() for x in range(10,45))
 window.practice_command.clear()
-window.practice_tools_button.click()
 assert window.editor.isVisible() and window.log.isVisible()
 window.practice_tools_button.click()
 assert not window.editor.isVisible() and not window.log.isVisible()
 
 with patch('context_operator.ui.window.time.monotonic',return_value=100.):
     window.last_paint=0;window.refresh()
-    assert list(window.rail_sources)==['iPhone','Microphone']
-    assert window.focus_panel.maximumHeight()<180
+    assert list(window.sources)==['iPhone','Microphone']
+    assert window.sources['Microphone'][2].isHidden()
     c.running=True;c.microphone=True;c.voice_state='standby'
     c.voice_status='Loading speech recognition'
     window.last_paint=0;window.refresh()
-    assert window.rail_sources['Microphone'][0].state=='standby'
-    assert window.focus_panel.maximumHeight()>180
+    assert window.sources['Microphone'][0].state=='standby'
+    assert not window.sources['Microphone'][2].isHidden()
     c._speech({'type':'ready'},c.voice_generation)
     window.last_paint=0;window.refresh()
-    assert window.rail_sources['Microphone'][0].state=='go'
+    assert window.sources['Microphone'][0].state=='go'
     c._speech({'type':'ready','device':{'fallbackFrom':'USB microphone'}},c.voice_generation)
     c._speech({'type':'speech_start','utteranceId':1},c.voice_generation)
     window.last_paint=0;window.refresh()
@@ -90,7 +93,7 @@ with patch('context_operator.ui.window.time.monotonic',return_value=100.):
     c._speech({'type':'error','message':'Recognition failed'},c.voice_generation)
     c._speech({'type':'stopped'},c.voice_generation)
     window.last_paint=0;window.refresh()
-    assert window.rail_sources['Microphone'][0].state=='hold'
+    assert window.sources['Microphone'][0].state=='hold'
     assert window.voice_value.text()=='Error · Recognition failed'
     window.last_paint=0
     c._output({'target':'Plus'},Intent('click'),'',c.generation,99.9)
@@ -191,7 +194,7 @@ for i in range(4):
     window.grab().save(str(out/f'compact-{i}.png'))
 texts=[b.text() for b in window.findChildren(QPushButton)]
 assert not any(word in text for text in texts for word in ('MobileGaze','UniGaze','hybrid','experiment'))
-assert [b.text() for b in window.nav]==['Overview','Profile','Practice','Settings']
+assert [b.text() for b in window.nav]==['Overview','Calibration','Practice','Settings']
 results['interactions']='passed'
 with patch('context_operator.personalization.ProfileStore.status',return_value={}),patch(
         'context_operator.personalization.history.latest_result',return_value=None):
@@ -209,13 +212,14 @@ with patch('context_operator.personalization.ProfileStore.status',return_value={
             'usable':False,'problems':['The second attempt failed.']}):
     window._profile_stamp=None
     window.refresh_profile()
-    assert window.validation_verdict.text()=='Accuracy: Good'
+    assert window.validation_verdict.text()=='Ready for panels and large buttons'
     assert window.metrics['median_px'].text()=='276 px'
     assert 'Saved setup' in window.validation_hint.text()
     window.navigate(1);app.processEvents()
     assert window.validation_details.isHidden()
     window.validation_toggle.click()
     assert window.validation_details.isVisible()
+    app.processEvents()
     window.grab().save(str(out/'profile-accepted-after-failed-retry.png'))
 results['accepted_profile_after_failed_retry']='passed'
 with patch.dict(c.settings,click_learning=True,anticipation=True), \
@@ -227,6 +231,9 @@ with patch.dict(c.settings,click_learning=True,anticipation=True), \
     window.refresh_learning('off')
     assert window.click_plain_status.text()=='Mira learns from your clicks once iPhone is connected.'
     assert window.prediction_plain_status.text().endswith('Not enough clicks yet.')
+    assert not window.click_plain_status.isVisible()
+    window.learning_advanced.click()
+    assert window.click_plain_status.isVisible()
     assert window.click_details.isHidden() and window.prediction_status.isHidden()
     window.click_details_toggle.click();window.prediction_details_toggle.click()
     assert window.click_summary.isVisible() and window.prediction_status.isVisible()
@@ -256,21 +263,18 @@ with tempfile.TemporaryDirectory() as folder, \
     with patch.object(window,'open_setup') as open_setup:
         window.gaze_btn.click()
         open_setup.assert_called_once_with()
-    assert window.validation_verdict.text()=='Accuracy: Fair · try setup again'
-    assert not window.scene_map_button.isVisible()
+    assert window.validation_verdict.text()=='Needs another try'
+    assert window.state_pill.word=='Not set up' and window.canvas.idle[0]=='See where you’re looking'
+    assert window.focus_panel.isVisible() and window.accuracy_note.text()=='Not accurate enough yet. Run setup again.'
     window.more_controls.click()
     assert window.run.isVisible() and window.voice_btn.isVisible()
-    assert window.scene_map_button.isVisible() and window.scene_map_button.text()=='Show screen map'
-    window.scene_map_button.click()
-    assert load()['show_scene_map'] and window.focus_panel.isVisible()
-    window.scene_map_button.click()
-    assert not load()['show_scene_map'] and not window.focus_panel.isVisible()
     window.more_controls.click()
 
     profile.return_value={'available':True,'report':accepted}
     window.navigate(1)
     window.setup_adopted()
     assert window.stack.currentIndex()==0 and window.gaze_btn.text()=='Connect iPhone'
+    assert window.state_pill.word=='Ready to connect' and window.overview_metrics['median_px'].text()=='276 px'
     assert window.gaze_btn.hasFocus() and not window.run.isVisible()
     with patch.object(c,'toggle_phone') as connect_phone:
         window.gaze_btn.click()
@@ -279,9 +283,11 @@ with tempfile.TemporaryDirectory() as folder, \
     c.running=True;c.phone=SimpleNamespace(worker=SimpleNamespace(is_alive=lambda:True),stop=Mock())
     window._profile_stamp=None;window.last_paint=0;window.refresh()
     assert not window.gaze_btn.isVisible() and window.disconnect_phone.text()=='Cancel connection'
+    assert window.state_pill.word=='Connecting' and window.phone_glyph.state=='standby'
     c.gaze_source_mode='iphone';c.gaze=Gaze(0,0,time.monotonic())
     window.last_paint=0;window.refresh()
     assert window.gaze_btn.isVisible() and window.gaze_btn.text()=='Open Practice'
+    assert window.state_pill.word=='Tracking' and window.sources['iPhone'][0].state=='go'
     assert window.run.isVisible() and window.run.text()=='Pause'
     assert window.disconnect_phone.isVisible() and not window.voice_btn.isVisible()
     app.processEvents()
@@ -326,12 +332,13 @@ with tempfile.TemporaryDirectory() as folder:
                           'jitter_px':17.,'coverage':.98}
     setup.refresh();app.processEvents()
     setup.grab().save(str(out/'setup-result-example.png'))
-    assert not setup.apply_button.isHidden()
+    assert not setup.apply_button.isHidden() and setup.retry_button.text()=='Start over'
     setup.session.report.update({'usable':False,
         'problems':['High error on new points.']})
     setup.refresh();app.processEvents()
     setup.grab().save(str(out/'setup-failed-example.png'))
-    assert not setup.retry_button.isHidden()
+    assert not setup.retry_button.isHidden() and setup.retry_button.text()=='Try setup again'
+    assert setup.retry_button.objectName()=='primary' and 'kept your current' not in setup.guide_body.text()
     assert setup.apply_button.isHidden()
     worker.is_alive.return_value=False
     setup.close()

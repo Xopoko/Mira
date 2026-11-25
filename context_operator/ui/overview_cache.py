@@ -32,7 +32,7 @@ class OverviewCache:
             sprite=QImage(math.ceil((sw+4)*dpr),math.ceil((sh+4)*dpr),QImage.Format_ARGB32_Premultiplied)
             sprite.setDevicePixelRatio(dpr);sprite.fill(0)
             q=QPainter(sprite);q.setRenderHint(QPainter.Antialiasing)
-            q.setPen(QPen(QColor('#4A4A4A'),.7));q.setBrush(QColor(58,58,58,70))
+            q.setPen(QPen(QColor('#4A515C'),.7));q.setBrush(QColor(58,64,74,70))
             q.drawRoundedRect(QRectF(2,2,sw,sh),3,3);q.end()
             self.sprites[key]=sprite
             while len(self.sprites)>256:self.sprites.popitem(last=False)

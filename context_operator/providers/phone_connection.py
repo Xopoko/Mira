@@ -12,7 +12,7 @@ import socket
 import time
 
 WIFI_PORT = 39472
-WIFI_PHONE_NEXT_STEP = 'On iPhone, open Mira, choose Wi‑Fi in the top-right menu, and tap Start Tracking.'
+WIFI_PHONE_NEXT_STEP = 'On iPhone, open Mira, check that Connection says Wi‑Fi, and tap Start Tracking.'
 _DISCOVERY_REPLY_LIMIT = 16_384
 _LAN = tuple(IPv4Network(value) for value in ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'))
 

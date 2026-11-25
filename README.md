@@ -55,12 +55,14 @@ highlight moves before you connect an iPhone.
    when its ring fills. Select **Check on new points**, do the same for five
    more targets, then select **Use gaze setup** if offered.
 4. Back in **Overview**, select **Connect iPhone**. Once gaze tracking is
-   live, select **Open Practice**. In the default **Follow gaze** mode, the
-   dot and nearby contours move as you look around. Choose **Stop practice**
-   to try the overlay in other apps. **Ctrl+Alt+F12** pauses tracking.
+   live, **Live preview** shows a miniature of your screen with the same
+   highlight. Select **Open Practice**. In the default **Follow gaze** mode,
+   the dot and nearby contours move as you look around. Choose
+   **Stop practice** to try the overlay in other apps. **Ctrl+Alt+F12** pauses
+   tracking.
 
 Mira is most useful for broad areas such as panels and large controls.
-In **Profile → Details**, the setup check shows **Typical error** (median)
+**Overview** and **Calibration → Details** show the setup check: **Typical error** (median)
 and **Hard points** (90th percentile) in physical screen pixels. The check uses targets that
 were held out of calibration. Repeat setup if you move the phone or monitor
 or change where you sit.

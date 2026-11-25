@@ -2,7 +2,7 @@
 import time
 
 from PySide6.QtCore import Qt, QTimer, QRectF
-from PySide6.QtGui import QColor, QPainter, QPen, QIcon, QFont, QShortcut, QKeySequence
+from PySide6.QtGui import QColor, QPainter, QPen, QIcon, QShortcut, QKeySequence
 from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy
 
 from ..personalization.webcam import WebcamSession, WebcamProfileStore
@@ -10,7 +10,8 @@ from ..personalization.webcam_attempts import WebcamAttemptStore
 from ..providers.webcam import WebcamGaze
 from ..settings import ASSETS, LOCAL
 from .setup import setup_geometry
-from .window import label, paint_progress, theme
+from .theme import (DANGER, GROUND, MUTED, RAIL, RING, SUCCESS, TEXT, WAITING, dark_title_bar, keyboard_focus,
+    label, paint_progress, theme, ui_font)
 
 
 REACTION_SECONDS = .50
@@ -28,7 +29,7 @@ class CameraPreview(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor('#141414'))
+        painter.setBrush(QColor(RAIL))
         painter.drawRoundedRect(QRectF(self.rect()), 10, 10)
         source = self.owner.provider
         frame = getattr(source, 'preview_image', None)
@@ -37,8 +38,8 @@ class CameraPreview(QWidget):
             image = frame.scaled(self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
             painter.drawImage((self.width()-image.width())//2, (self.height()-image.height())//2, image)
         else:
-            painter.setPen(QColor('#A6A6A0'))
-            painter.setFont(QFont('Segoe UI', 13))
+            painter.setPen(QColor(MUTED))
+            painter.setFont(ui_font('BODY', 15))
             message = 'Your camera preview appears here' if source is None else 'Waiting for camera…'
             painter.drawText(self.rect().adjusted(24, 24, -24, -24), Qt.AlignCenter | Qt.TextWordWrap, message)
 
@@ -51,7 +52,7 @@ class WebcamCanvas(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor('#141414' if self.owner.collecting else '#F3F3F0'))
+        painter.fillRect(self.rect(), QColor(RAIL if self.owner.collecting else GROUND))
         painter.setRenderHint(QPainter.Antialiasing)
         if not self.owner.collecting:
             return
@@ -61,14 +62,14 @@ class WebcamCanvas(QWidget):
         x, y = self.width()*target[0], self.height()*target[1]
         paused = self.owner.paused
         progress = 0. if paused else min(.97, getattr(self.owner.session, 'progress', 0.))
-        painter.setPen(QPen(QColor('#4A4A4A'), 4))
+        painter.setPen(QPen(QColor(RING), 4))
         painter.setBrush(Qt.NoBrush)
         ring = QRectF(x-23, y-23, 46, 46)
         painter.drawEllipse(ring)
-        painter.setPen(QPen(QColor('#FFB020'), 4, Qt.SolidLine, Qt.RoundCap))
+        painter.setPen(QPen(QColor(WAITING), 4, Qt.SolidLine, Qt.RoundCap))
         painter.drawArc(ring, 90*16, -round(360*16*progress))
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor('#F2F2EE' if not paused else '#A6A6A0'))
+        painter.setBrush(QColor(MUTED if paused else TEXT))
         painter.drawEllipse(QRectF(x-4, y-4, 8, 8))
         message = self.owner.target_message()
         # Keep the feedback close to the eyes' target, on screen even at corners.
@@ -76,8 +77,8 @@ class WebcamCanvas(QWidget):
         left = max(16, min(x-width/2, self.width()-width-16))
         top = y+38 if y < self.height()*.75 else y-92
         rect = QRectF(left, top, width, 54)
-        painter.setPen(QColor('#A6A6A0'))
-        painter.setFont(QFont('Segoe UI', 10))
+        painter.setPen(QColor(MUTED))
+        painter.setFont(ui_font('BODY', 13))
         painter.drawText(rect, Qt.AlignCenter | Qt.TextWordWrap, message)
         session = self.owner.session
         total = len(session.train_targets if session.phase == 'train' else session.check_targets)
@@ -169,10 +170,9 @@ class WebcamSetupWindow(QMainWindow):
         bar = QHBoxLayout(self.collection_bar)
         bar.setContentsMargins(0, 0, 0, 0)
         self.collection_label = QLabel('')
-        self.collection_label.setStyleSheet('color:#A6A6A0;')
+        self.collection_label.setObjectName('muted')
         bar.addWidget(self.collection_label, 1)
         self.pause_button = QPushButton('Pause · Space')
-        self.pause_button.setObjectName('inverse')
         self.pause_button.clicked.connect(self.toggle_pause)
         bar.addWidget(self.pause_button)
         self.camera_button = QPushButton('Check camera')
@@ -216,6 +216,8 @@ class WebcamSetupWindow(QMainWindow):
         self.timer.setInterval(35)
         self.timer.timeout.connect(self.tick)
         self.timer.start()
+        dark_title_bar(self)
+        keyboard_focus(self)
         self.refresh()
 
     def connect_camera(self):
@@ -417,7 +419,7 @@ class WebcamSetupWindow(QMainWindow):
         else:
             self.status.setText('Camera off' if report is None else
                                 'Ready to save' if report.usable else 'This profile is inactive')
-        self.status.setStyleSheet('color: '+ ('#B3261E' if self.error else '#1A7A3D' if self._ready() or self.applied else '#5C5C57'))
+        self.status.setStyleSheet('color: '+ (DANGER if self.error else SUCCESS if self._ready() or self.applied else MUTED))
         diagnostics = getattr(self.provider, 'diagnostics', None)
         if callable(diagnostics):
             values = diagnostics()

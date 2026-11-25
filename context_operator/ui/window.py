@@ -1,15 +1,14 @@
-"""Daily operator UI with one personal setup and no experimental model menus."""
+"""Main window: gaze tracking first, everything else behind Advanced."""
 from collections import Counter
 import subprocess
 import threading
 import time
-from PySide6.QtCore import Qt, QTimer, QRectF, QPointF, QSignalBlocker, QByteArray, Signal
-from PySide6.QtGui import QPainter, QPen, QColor, QFontDatabase, QIcon, QPixmap
-from PySide6.QtSvg import QSvgRenderer
+from PySide6.QtCore import Qt, QTimer, QRect, QRectF, QPointF, QSignalBlocker, QSize, Signal
+from PySide6.QtGui import QPainter, QPen, QColor, QIcon, QBrush, QRadialGradient, QPainterPath, QFontMetrics
 from PySide6.QtWidgets import (QMainWindow, QWidget, QFrame, QLabel, QPushButton,
     QVBoxLayout, QHBoxLayout, QGridLayout, QStackedWidget, QLineEdit,
-    QPlainTextEdit, QSlider, QCheckBox, QComboBox, QScrollArea, QSizePolicy,
-    QFormLayout, QStatusBar, QStyle, QStyleOptionComboBox)
+    QPlainTextEdit, QSlider, QComboBox, QScrollArea, QSizePolicy,
+    QFormLayout, QStatusBar)
 from ..core.webcam import fresh as fresh_gaze
 from ..foundations.speech.runtime import microphone_matches
 from ..providers.models import Speech
@@ -18,272 +17,171 @@ from ..settings import ASSETS, LOCAL, save
 from .overlay import paint_scene_light,paint_magnetic_focus,current_focus_target
 from .light_cache import LightCache
 from .overview_cache import OverviewCache
-
-STYLE = """
-QMainWindow, QDialog, QWidget#root, QWidget#page, QStatusBar {background:#F3F3F0;}
-QWidget {font-family:"BODY_FONT";font-size:14px;color:#141414;}
-QFrame#sidebar {background:#141414;}
-QFrame#panel, QWidget#guide {background:#FAFAF8;border:1px solid #D9D9D3;border-radius:10px;}
-QFrame#cue {background:#141414;border-radius:14px;}
-QFrame#mapPanel {background:#141414;border-radius:10px;}
-QFrame#practiceStage {background:#141414;border-radius:14px;}
-QLabel#practiceCount {font-family:"MONO_FONT";font-size:16px;font-weight:600;}
-QPushButton#practiceTarget {
-    background:#282826;color:#F2F2EE;border:2px solid #656560;border-radius:12px;
-    padding:10px 12px;
-}
-QPushButton#practiceTarget:hover {background:#343431;}
-QPushButton#practiceTarget:pressed {background:#40403B;}
-QPushButton#practiceTarget:focus {border-color:#83A1FF;}
-QPushButton#practiceTarget:disabled {background:#222220;color:#A6A6A0;border-color:#44443F;}
-QFrame#rule {background:#DCDCD6;border:none;}
-QFrame#railRule {background:#4A4A4A;border:none;}
-QLabel {background:transparent;border:none;}
-QLabel#muted, QStatusBar {color:#5C5C57;}
-QLabel#title, QLabel#heading, QLabel#brand, QLabel#call, QLabel#guideHeading {
-    font-weight:600;
-}
-QLabel#title {font-size:28px;}
-QLabel#heading, QLabel#guideHeading {font-size:16px;}
-QLabel#brand {color:#F2F2EE;font-size:26px;font-weight:700;}
-QLabel#railText {color:#F2F2EE;}
-QLabel#railMuted {color:#A6A6A0;font-size:12px;}
-QLabel#call {color:#FFFFFF;font-size:30px;}
-QLabel#cueDetail {color:#BDBDB7;}
-QLabel#metric, QLabel#step {font-family:"MONO_FONT";}
-QLabel#step {color:#FFFFFF;background:#141414;border-radius:11px;font-size:12px;}
-QPushButton {background:#FAFAF8;border:1px solid #8C8C85;border-radius:8px;padding:10px 18px;font-weight:600;}
-QPushButton:hover {background:#EDEDE8;}
-QPushButton:pressed {background:#DCDCD6;}
-QPushButton:focus {border:2px solid #3D6BFF;padding:9px 17px;}
-QPushButton#primary {background:#141414;color:#FFFFFF;border-color:#141414;}
-QPushButton#primary:hover {background:#2A2A2A;}
-QPushButton#primary:pressed {background:#000000;}
-QPushButton#inverse {background:#FFFFFF;color:#141414;border-color:#FFFFFF;}
-QPushButton#inverse:hover {background:#EDEDE8;}
-QPushButton#inverse:pressed {background:#DCDCD6;}
-QPushButton#primary:focus, QPushButton#inverse:focus {border-color:#3D6BFF;}
-QPushButton:disabled, QPushButton#primary:disabled, QPushButton#inverse:disabled {
-    background:#D9D9D3;color:#8A8A85;border-color:#D9D9D3;
-}
-QPushButton#nav {text-align:left;background:transparent;border:2px solid transparent;color:#F2F2EE;padding:8px 12px;}
-QPushButton#nav:hover, QPushButton#nav:checked {background:#2C2C2C;}
-QPushButton#nav:focus {border-color:#3D6BFF;}
-QPushButton#advanced {text-align:left;}
-QPushButton#advanced:checked {background:#EDEDE8;}
-QPushButton#link {background:transparent;border:2px solid transparent;color:#5C5C57;padding:4px 6px;}
-QPushButton#link:hover {color:#141414;text-decoration:underline;}
-QPushButton#link:focus {border-color:#3D6BFF;}
-QLineEdit,QPlainTextEdit,QComboBox {
-    background:#FFFFFF;border:1px solid #8C8C85;border-radius:8px;padding:8px 10px;
-    selection-background-color:#2C4FD1;selection-color:#FFFFFF;
-}
-QLineEdit,QPlainTextEdit {placeholder-text-color:#5C5C57;}
-QLineEdit:focus,QPlainTextEdit:focus,QComboBox:focus {border:2px solid #3D6BFF;padding:7px 9px;}
-QComboBox {padding-right:30px;}
-QComboBox:focus {padding-right:29px;}
-QComboBox::drop-down {subcontrol-origin:padding;subcontrol-position:top right;width:26px;border:none;}
-QComboBox QAbstractItemView {background:#FFFFFF;color:#141414;selection-background-color:#2C4FD1;selection-color:#FFFFFF;}
-QSlider::groove:horizontal {background:#D9D9D3;height:4px;border-radius:2px;}
-QSlider::sub-page:horizontal {background:#141414;border-radius:2px;}
-QSlider::handle:horizontal {background:#141414;border:2px solid #FFFFFF;width:12px;margin:-6px 0;border-radius:8px;}
-QSlider:focus::handle:horizontal {border-color:#3D6BFF;}
-QCheckBox {spacing:9px;padding:3px 0;}
-QCheckBox::indicator {width:14px;height:14px;border:1.5px solid #141414;border-radius:4px;background:#FFFFFF;}
-QCheckBox::indicator:checked {background:#141414;image:url("CHECKMARK");}
-QCheckBox::indicator:focus {border-color:#3D6BFF;}
-QCheckBox:disabled {color:#8A8A85;}
-QCheckBox::indicator:disabled {border-color:#8A8A85;}
-QCheckBox::indicator:checked:disabled {background:#8A8A85;}
-QScrollArea {background:transparent;border:none;}
-QScrollBar:vertical {background:transparent;width:8px;}
-QScrollBar:horizontal {background:transparent;height:8px;}
-QScrollBar::handle {background:#C9C9C2;border-radius:4px;min-height:30px;}
-QScrollBar::add-line,QScrollBar::sub-line {height:0px;width:0px;}
-QScrollBar::add-page,QScrollBar::sub-page {background:transparent;}
-QToolTip {background:#FAFAF8;color:#141414;border:1px solid #D9D9D3;padding:8px;}
-"""
-
-DARK_SETUP_STYLE = """
-QMainWindow, QWidget#canvas {background:#141414;}
-QWidget#canvas QLabel#title {color:#F2F2EE;}
-QWidget#canvas QLabel#stageMuted {color:#A6A6A0;}
-"""
+from .theme import (ACCENT, CARD, FAINT, GAZE_DOT, GAZE_FOCUS, GAZE_LIGHT, GROUND, LINE, MUTED, OUTLINE,
+    RAIL, STATE_COLORS, TEXT, Lamp, NavButton, Pill, SettingsComboBox, Switch, card, connect_disclosure,
+    dark_title_bar, keyboard_focus, label, rule, swatch, theme, ui_font)
 
 GO_CONFIRMATION_SECONDS = 2.0
-
-CHEVRON = QByteArray(b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 8">'
-                    b'<path d="M1 1l5 5 5-5" stroke="#5C5C57" stroke-width="1.5" fill="none" '
-                    b'stroke-linecap="round" stroke-linejoin="round"/></svg>')
-
-def theme(extra=""):
-    fonts = {
-        'BODY_FONT': ('Segoe UI Variable Text', 'Segoe UI Variable', 'Segoe UI'),
-        'MONO_FONT': ('Cascadia Mono', 'Consolas'),
-    }
-    style = STYLE + extra
-    for token, families in fonts.items():
-        family = next((name for name in families if QFontDatabase.hasFamily(name)), families[-1])
-        style = style.replace(token, family)
-    return style.replace('CHECKMARK', (ASSETS / 'check.svg').as_posix())
+PAGES = ('Overview', 'Calibration', 'Practice', 'Settings')
+METRICS = (('median_px', 'Typical error', 'Half of the check samples landed closer to the target than this.'),
+           ('p90_px', 'Hard points', 'Nine in ten check samples landed closer than this.'),
+           ('coverage', 'Coverage', 'Share of the check samples Mira could place on the screen.'))
+# Window shapes inside the pictured monitor, as fractions of it. The iPhone app draws the same picture.
+PANES = ((.05, .09, .22, .82), (.31, .09, .64, .16), (.31, .32, .30, .32), (.65, .32, .30, .32), (.31, .71, .64, .20))
+DESK_HEIGHT = 182
 
 
-class Lamp(QWidget):
-    """An accessible cue light with an explicit state and no animation."""
-    COLORS = {'off': '#3A3A3A', 'standby': '#FFB020', 'go': '#2DBE60', 'hold': '#E5483B'}
+def paint_desk(painter, lit):
+    """A monitor with the iPhone standing under it, centred on x=0 from y=0 down.
+    Lit, it shows the gaze light on the monitor."""
+    center = 0
+    monitor = QRectF(-104, 0, 208, 122)
+    glass = QPainterPath()
+    glass.addRoundedRect(monitor, 8, 8)
 
-    def __init__(self, name, diameter=10, *, on_stage=False):
+    def pane(unit):
+        x, y, w, h = unit
+        return QRectF(monitor.x()+x*monitor.width(), monitor.y()+y*monitor.height(), w*monitor.width(), h*monitor.height())
+
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(QColor(GROUND))
+    painter.drawPath(glass)
+    painter.setBrush(Qt.NoBrush)
+    painter.setPen(QPen(QColor(LINE), 1))
+    for unit in PANES:
+        painter.drawRoundedRect(pane(unit), 3, 3)
+    if lit:
+        focused = pane(PANES[2])
+        point = QPointF(focused.center().x()+8, focused.center().y()-4)
+        radius = monitor.width()*.36
+
+        def light(alpha):
+            gradient = QRadialGradient(point, radius)
+            for position, strength in ((0, alpha), (1, 0)):
+                color = QColor(GAZE_LIGHT)
+                color.setAlpha(strength)
+                gradient.setColorAt(position, color)
+            return QBrush(gradient)
+
+        painter.save()
+        painter.setClipPath(glass)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(light(72))
+        painter.drawEllipse(point, radius, radius)
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(QPen(light(255), 1.5))
+        for unit in PANES:
+            painter.drawRoundedRect(pane(unit), 3, 3)
+        painter.setPen(QPen(QColor(GAZE_FOCUS), 2))
+        painter.drawRoundedRect(focused, 3, 3)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(GAZE_DOT))
+        painter.drawEllipse(point, 3, 3)
+        painter.restore()
+    painter.setBrush(Qt.NoBrush)
+    painter.setPen(QPen(QColor(OUTLINE), 2, Qt.SolidLine, Qt.RoundCap))
+    painter.drawPath(glass)
+    foot = monitor.bottom()+12
+    painter.drawLine(QPointF(center, monitor.bottom()+1), QPointF(center, foot))
+    painter.drawLine(QPointF(center-30, foot), QPointF(center+30, foot))
+    phone = QRectF(center-11, foot+8, 22, 40)
+    painter.setPen(QPen(QColor(TEXT), 1.5))
+    painter.setBrush(QColor(CARD))
+    painter.drawRoundedRect(phone, 6, 6)
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(QColor(ACCENT if lit else FAINT))
+    painter.drawEllipse(QPointF(center, phone.top()+7), 2.5, 2.5)
+
+
+class PhoneGlyph(QWidget):
+    """The iPhone in the device card. Its camera dot repeats the connection state."""
+    def __init__(self):
         super().__init__()
-        self.name = name
-        self.off_ring = '#4A4A4A' if on_stage else '#BDBDB6'
-        self.setFixedSize(diameter, diameter)
-        self.set_state('off', 'Off')
+        self.state = 'off'
+        self.setFixedSize(30, 54)
 
-    def set_state(self, state, word):
-        self.setAccessibleName(f'{self.name} lamp, {word.lower()}')
-        if getattr(self, 'state', None) != state:
+    def set_state(self, state):
+        if state != self.state:
             self.state = state
             self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setBrush(QColor(self.COLORS[self.state]))
-        if self.state == 'off':
-            painter.setPen(QPen(QColor(self.off_ring), 2))
-            circle = QRectF(self.rect()).adjusted(1, 1, -1, -1)
-        else:
-            painter.setPen(Qt.NoPen)
-            circle = QRectF(self.rect())
-        painter.drawEllipse(circle)
-
-
-class SettingsComboBox(QComboBox):
-    """Keep a visible chevron with the flat input style."""
-    def __init__(self):
-        super().__init__()
-        self.chevron = QSvgRenderer(CHEVRON, self)
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        option = QStyleOptionComboBox()
-        self.initStyleOption(option)
-        arrow = self.style().subControlRect(QStyle.CC_ComboBox, option, QStyle.SC_ComboBoxArrow, self)
-        painter = QPainter(self)
-        self.chevron.render(painter, QRectF(arrow.center().x()-5, arrow.center().y()-3, 10, 7))
-
-
-def disclosure_icon():
-    icon = QIcon()
-    svg = QSvgRenderer(CHEVRON)
-    for state, angle in ((QIcon.Off, -90), (QIcon.On, 0)):
-        pixmap = QPixmap(32, 32)
-        pixmap.setDevicePixelRatio(2)
-        pixmap.fill(Qt.transparent)
-        painter = QPainter(pixmap)
-        painter.translate(8, 8)
-        painter.rotate(angle)
-        svg.render(painter, QRectF(-6, -4, 12, 8))
-        painter.end()
-        icon.addPixmap(pixmap, QIcon.Normal, state)
-    return icon
-
-
-def connect_disclosure(button, region):
-    button.setCheckable(True)
-    button.setIcon(disclosure_icon())
-    button.setAccessibleDescription('Collapsed')
-    button.toggled.connect(region.setVisible)
-    button.toggled.connect(lambda expanded:button.setAccessibleDescription('Expanded' if expanded else 'Collapsed'))
-    region.hide()
-
-
-def paint_progress(painter, area, total, completed):
-    """Show phase progress in the chrome, away from the target positions."""
-    painter.setRenderHint(QPainter.Antialiasing)
-    for index in range(total):
-        current = index == completed
-        painter.setBrush(QColor('#2DBE60') if index < completed else Qt.NoBrush)
-        painter.setPen(QPen(QColor('#FFB020' if current else '#2DBE60' if index < completed else '#4A4A4A'), 1.5))
-        painter.drawEllipse(QRectF(area.x() + index*15, area.y(), 8, 8))
-
-
-def rule(*, on_stage=False):
-    line = QFrame()
-    line.setObjectName('railRule' if on_stage else 'rule')
-    line.setFixedHeight(1)
-    return line
-
-
-def swatch(color, *, dot=False):
-    mark = QFrame()
-    mark.setFixedSize(*( (8, 8) if dot else (12, 9)))
-    decoration = f'background:{color};border-radius:4px;' if dot else f'border:2px solid {color};border-radius:2px;'
-    mark.setStyleSheet(decoration)
-    return mark
-
-
-def label(text, style=None, wrap=False):
-    widget=QLabel(text);widget.setWordWrap(wrap);widget.setTextFormat(Qt.PlainText)
-    if style:widget.setObjectName(style)
-    if style in ('brand', 'title', 'heading', 'call', 'guideHeading'):
-        family = 'Segoe UI Variable'
-        if QFontDatabase.hasFamily(family):
-            face = 'Bold Display' if style == 'brand' else 'Semibold Display'
-            widget.setFont(QFontDatabase.font(family, face, 14))
-    return widget
-
-
-def panel(name='panel'):
-    frame=QFrame();frame.setObjectName(name);layout=QVBoxLayout(frame)
-    layout.setContentsMargins(20,16,20,16);layout.setSpacing(10)
-    return frame,layout
+        painter.setPen(QPen(QColor(OUTLINE if self.state == 'off' else TEXT), 1.5))
+        painter.setBrush(QColor(GROUND))
+        painter.drawRoundedRect(QRectF(self.rect()).adjusted(1.5, 1.5, -1.5, -1.5), 7, 7)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(STATE_COLORS[self.state]))
+        painter.drawEllipse(QPointF(self.width()/2, 9.5), 2.5, 2.5)
 
 
 class SceneCanvas(QWidget):
     """Numeric element geometry, never a saved screen image."""
     def __init__(self,controller):
-        super().__init__();self.controller=controller;self.setMinimumHeight(180)
-        self.setAccessibleName('Live map of screen elements and gaze focus')
+        super().__init__();self.controller=controller;self.setMinimumHeight(240)
+        self.setAccessibleName('Live preview of screen elements and gaze focus')
         self.overview=OverviewCache();self.light_cache=LightCache(max_pixels=1_000_000)
+        self.idle=('','',False)
+        # No gaze source can be shown: the picture and its words say why instead of an empty map.
+        self.blocked=False
+
+    def paint_message(self,p,text):
+        p.setFont(ui_font('BODY',14));p.setPen(QColor(MUTED))
+        p.drawText(QRectF(self.rect()).adjusted(24,0,-24,0),Qt.AlignCenter|Qt.TextWordWrap,text)
+
+    def paint_idle(self,p):
+        title,text,lit=self.idle
+        width=min(440,self.width()-48)
+        text_font=ui_font('BODY',14)
+        text_height=QFontMetrics(text_font).boundingRect(QRect(0,0,width,400),Qt.AlignHCenter|Qt.TextWordWrap,text).height()
+        words=32+text_height
+        scale=min(1.5,(self.width()-48)/300,(self.height()-words-60)/DESK_HEIGHT)
+        picture=scale>=1
+        top=(self.height()-words-(DESK_HEIGHT*scale+28 if picture else 0))/2
+        if picture:
+            p.save();p.translate(self.width()/2,top);p.scale(scale,scale)
+            paint_desk(p,lit)
+            p.restore();top+=DESK_HEIGHT*scale+28
+        left=(self.width()-width)/2
+        p.setPen(QColor(TEXT));p.setFont(ui_font('STRONG',16))
+        p.drawText(QRectF(left,top,width,24),Qt.AlignCenter,title)
+        p.setPen(QColor(MUTED));p.setFont(text_font)
+        p.drawText(QRectF(left,top+32,width,text_height+4),Qt.AlignHCenter|Qt.AlignTop|Qt.TextWordWrap,text)
 
     def paintEvent(self,event):
         p=QPainter(self);p.setRenderHint(QPainter.Antialiasing)
-        area=QRectF(1,1,self.width()-2,self.height()-2)
-        p.setPen(Qt.NoPen);p.setBrush(QColor('#141414'));p.drawRoundedRect(area,10,10)
-        if self.controller.settings.get('quiet_mode',False):return
+        p.setPen(Qt.NoPen);p.setBrush(QColor(RAIL));p.drawRoundedRect(QRectF(self.rect()),10,10)
         c=self.controller;scene=c.scene;now=time.monotonic()
-        elements=scene.current_elements(now) if scene and 0<=now-scene.captured<3 else ()
-        if elements:
-            bounds=scene.bounds;scale=min((self.width()-48)/max(1,bounds.w),(self.height()-40)/max(1,bounds.h))
-            ox=(self.width()-bounds.w*scale)/2;oy=(self.height()-bounds.h*scale)/2
-            origin=(bounds.x-ox/scale,bounds.y-oy/scale)
-            rects=[QRectF(ox+(e.rect.x-bounds.x)*scale,oy+(e.rect.y-bounds.y)*scale,
-                         max(3,e.rect.w*scale),max(3,e.rect.h*scale)) for e in elements]
-            self.overview.paint(p,rects,self.width(),self.height())
-            gaze=c.attention if c.attention and c.attention.valid and 0<=now-c.attention.captured<.25 else None
-            prediction=c.prediction if c.prediction and c.prediction.is_fresh(now) else None
-            magnetic=c.settings.get('highlight_mode')=='magnetic'
-            selected_until=c.fusion.selection_until(c.focus.target,now,gaze)
-            target=current_focus_target(scene,c.focus.target,gaze,now,selected_until)
-            if magnetic:
-                paint_magnetic_focus(p,scene,target,now,origin,scale)
-            else:
-                paint_scene_light(p,scene,QPointF(gaze.x,gaze.y) if gaze else None,
-                                  gaze.radius if gaze else 230.,now,target.id if target and not selected_until else None,
-                                  origin=origin,scale=scale,prediction=prediction,cache=self.light_cache)
-                if selected_until:
-                    paint_magnetic_focus(p,scene,target,now,origin,scale)
-            if gaze and not magnetic and c.settings.get('show_gaze',True):
-                p.setPen(Qt.NoPen);p.setBrush(QColor('#bfefff'))
-                p.drawEllipse(QPointF(ox+(gaze.x-bounds.x)*scale,oy+(gaze.y-bounds.y)*scale),2.5,2.5)
+        if self.blocked or not c.running:
+            self.paint_idle(p);return
+        quiet=c.settings.get('quiet_mode',False)
+        elements=scene.current_elements(now) if scene and not quiet and 0<=now-scene.captured<3 else ()
+        if not elements:
+            self.paint_message(p,'Quiet mode is on. Gaze cues are hidden.' if quiet else 'Mira is waiting for the screen map.')
+            return
+        bounds=scene.bounds;scale=min((self.width()-48)/max(1,bounds.w),(self.height()-40)/max(1,bounds.h))
+        ox=(self.width()-bounds.w*scale)/2;oy=(self.height()-bounds.h*scale)/2
+        origin=(bounds.x-ox/scale,bounds.y-oy/scale)
+        rects=[QRectF(ox+(e.rect.x-bounds.x)*scale,oy+(e.rect.y-bounds.y)*scale,
+                     max(3,e.rect.w*scale),max(3,e.rect.h*scale)) for e in elements]
+        self.overview.paint(p,rects,self.width(),self.height())
+        gaze=c.attention if c.attention and c.attention.valid and 0<=now-c.attention.captured<.25 else None
+        prediction=c.prediction if c.prediction and c.prediction.is_fresh(now) else None
+        magnetic=c.settings.get('highlight_mode')=='magnetic'
+        selected_until=c.fusion.selection_until(c.focus.target,now,gaze)
+        target=current_focus_target(scene,c.focus.target,gaze,now,selected_until)
+        if magnetic:
+            paint_magnetic_focus(p,scene,target,now,origin,scale)
         else:
-            self.overview.paint(p,[],self.width(),self.height())
-            p.setFont(self.font());p.setPen(QColor('#A6A6A0'))
-            message = ('Mira is waiting for the screen map.' if c.running else
-                       'Select “Start” to show the screen map.')
-            p.drawText(area.adjusted(16,0,-16,0), Qt.AlignCenter | Qt.TextWordWrap, message)
-
+            paint_scene_light(p,scene,QPointF(gaze.x,gaze.y) if gaze else None,
+                              gaze.radius if gaze else 230.,now,target.id if target and not selected_until else None,
+                              origin=origin,scale=scale,prediction=prediction,cache=self.light_cache)
+            if selected_until:
+                paint_magnetic_focus(p,scene,target,now,origin,scale)
+        if gaze and not magnetic and c.settings.get('show_gaze',True):
+            p.setPen(Qt.NoPen);p.setBrush(QColor(GAZE_DOT))
+            p.drawEllipse(QPointF(ox+(gaze.x-bounds.x)*scale,oy+(gaze.y-bounds.y)*scale),2.5,2.5)
 
 
 class Window(QMainWindow):
@@ -292,189 +190,230 @@ class Window(QMainWindow):
 
     def __init__(self,controller):
         super().__init__();self.c=controller;self.settings=controller.settings;self.overlays=[];self.setup_window=None
-        self.setWindowTitle('Mira');self.resize(1120,760);self.setMinimumSize(900,640)
+        self.setWindowTitle('Mira');self.resize(1180,780);self.setMinimumSize(940,720)
         self.setWindowIcon(QIcon(str(ASSETS/'icon.png')));self.setStyleSheet(theme())
         self.last_paint=0.;self.counter=0;self.practice_active=False;self._profile_stamp=None;self._profile_status={}
         self._practice_started_control = False
         self._phone_search = None
         self._microphone_listing = False
         self._saved_phone_host = self.settings.get('phone_wifi_host', '')
+        self.setting_checks = {}
         self.phone_search_finished.connect(self.finish_phone_search)
         self.microphone_list_finished.connect(self.show_microphones)
         root=QWidget();root.setObjectName('root');self.setCentralWidget(root)
         layout=QHBoxLayout(root);layout.setContentsMargins(0,0,0,0);layout.setSpacing(0)
-        side=QFrame();side.setObjectName('sidebar');side.setFixedWidth(216)
-        sl=QVBoxLayout(side);sl.setContentsMargins(18,23,18,18);sl.setSpacing(6)
-        brand=QHBoxLayout();brand.setSpacing(9)
-        logo=label('');logo.setPixmap(self.windowIcon().pixmap(34,34))
-        brand.addWidget(logo);brand.addWidget(label('Mira','brand'),1)
-        sl.addLayout(brand);sl.addSpacing(21)
+        rail=QFrame();rail.setObjectName('rail');rail.setFixedWidth(77)
+        rl=QVBoxLayout(rail);rl.setContentsMargins(8,16,9,12);rl.setSpacing(4)
+        logo=QLabel();logo.setPixmap(self.windowIcon().pixmap(QSize(36,36),self.devicePixelRatioF()))
+        logo.setAlignment(Qt.AlignCenter);logo.setAccessibleName('Mira')
+        rl.addWidget(logo);rl.addSpacing(14)
         self.stack=QStackedWidget();self.nav=[]
-        for index,text in enumerate(('Overview','Profile','Practice','Settings')):
-            button=QPushButton(text);button.setObjectName('nav');button.setCheckable(True)
+        for index,text in enumerate(PAGES):
+            button=NavButton(text)
             button.clicked.connect(lambda _,i=index:self.navigate(i));self.nav.append(button)
-            sl.addWidget(button)
-        sl.addStretch()
-        sl.addWidget(rule(on_stage=True));sl.addSpacing(7)
-        sl.addWidget(label('Sources','railText'))
-        self.rail_sources={}
-        for name in ('iPhone','Microphone'):
-            row=QHBoxLayout();row.setSpacing(8)
-            lamp=Lamp(name,on_stage=True);state=label('Off','railMuted')
-            row.addWidget(lamp);row.addWidget(label(name,'railText'),1);row.addWidget(state)
-            sl.addLayout(row);self.rail_sources[name]=(lamp,state)
-        sl.addSpacing(9)
-        sl.addWidget(label('Ctrl + Alt + F12 stops control','railMuted',True))
-        sl.addWidget(label('Version 1.3.1','railMuted'))
+            rl.addWidget(button,0,Qt.AlignHCenter)
+        rl.addStretch()
 
         content=QWidget();content_layout=QVBoxLayout(content)
         content_layout.setContentsMargins(0,0,0,0);content_layout.setSpacing(0)
         content_layout.addWidget(self.stack,1)
         self.content_status=QStatusBar(content)
         self.content_status.setSizeGripEnabled(False)
-        self.content_status.setContentsMargins(26,0,26,0)
+        self.content_status.setContentsMargins(22,0,22,0)
         content_layout.addWidget(self.content_status)
-        self.status=label('Ready to connect','muted')
+        self.status=label('Ready to connect')
         self.content_status.addWidget(self.status,1)
-        layout.addWidget(side);layout.addWidget(content,1)
+        self.sources={}
+        for name in ('iPhone','Microphone'):
+            chip=QWidget();row=QHBoxLayout(chip);row.setContentsMargins(0,0,10,0);row.setSpacing(6)
+            lamp=Lamp(name);state=label('Off')
+            row.addWidget(lamp);row.addWidget(label(name));row.addWidget(state)
+            self.content_status.addPermanentWidget(chip);self.sources[name]=(lamp,state,chip)
+        self.content_status.addPermanentWidget(label('Ctrl + Alt + F12 pauses tracking'))
+        layout.addWidget(rail);layout.addWidget(content,1)
         self.build_control();self.build_profile();self.build_practice();self.build_settings();self.navigate(0)
         self.c.changed.connect(self.refresh);self.c.message.connect(self.add_message)
         self.refresh_timer=QTimer(self);self.refresh_timer.timeout.connect(self.refresh);self.refresh_timer.start(150)
+        dark_title_bar(self);keyboard_focus(self);root.setFocus()
         self.refresh()
 
-    def page(self,title,description):
-        page=QWidget();page.setObjectName('page');layout=QVBoxLayout(page)
-        layout.setContentsMargins(28,20,28,18);layout.setSpacing(10)
-        header=QVBoxLayout();header.setSpacing(3)
-        header.addWidget(label(title,'title'));header.addWidget(label(description,'muted',True))
+    def page(self,title,description='',width=None):
+        """A scrolling page, optionally held to a reading width.
+        Returns its layout, its title row and the row of actions beside the title."""
+        page=QWidget();page.setObjectName('page');outer=QHBoxLayout(page)
+        outer.setContentsMargins(28,22,28,20)
+        column=QWidget();layout=QVBoxLayout(column)
+        layout.setContentsMargins(0,0,0,0);layout.setSpacing(16)
+        outer.addWidget(column,100)
+        if width:
+            column.setMaximumWidth(width);outer.addStretch(1)
+        header=QHBoxLayout();header.setSpacing(10)
+        heading=QVBoxLayout();heading.setSpacing(4)
+        title_row=QHBoxLayout();title_row.setSpacing(12)
+        title_row.addWidget(label(title,'title'));heading.addLayout(title_row)
+        if description:heading.addWidget(label(description,'muted',True))
+        header.addLayout(heading,1)
         layout.addLayout(header)
         area=QScrollArea();area.setWidgetResizable(True);area.setWidget(page);self.stack.addWidget(area)
-        return layout
+        return layout,title_row,header
 
     def build_control(self):
-        layout=self.page('Overview','See the area of the screen you’re looking at.')
-        self.build_phone_card(layout)
+        layout,title_row,header=self.page('Overview')
+        self.state_pill=Pill()
+        title_row.addWidget(self.state_pill,0,Qt.AlignVCenter);title_row.addStretch()
+        self.mouse_preview=QPushButton('Try with mouse')
+        self.mouse_preview.clicked.connect(self.open_mouse_preview)
+        self.run=QPushButton('Start')
+        self.run.clicked.connect(lambda:self.c.pause() if self.c.running else self.c.start())
+        self.gaze_btn=QPushButton('Set up iPhone')
+        self.gaze_btn.setObjectName('primary')
+        self.gaze_btn.clicked.connect(self.activate_phone)
+        for button in (self.mouse_preview,self.run,self.gaze_btn):
+            header.addWidget(button,0,Qt.AlignBottom)
 
-        self.control_panel,box=panel('cue');box.setContentsMargins(22,17,22,17)
-        row=QHBoxLayout();row.setSpacing(20)
-        call = QWidget()
-        call.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        column = QVBoxLayout(call)
-        column.setContentsMargins(0, 0, 0, 0);column.setSpacing(2)
-        self.target = label('Paused', 'call', True)
-        self.reason = label('', 'cueDetail', True)
-        column.addWidget(self.target)
-        column.addWidget(self.reason)
-        row.addWidget(call, 1)
-        self.run = QPushButton('Start')
-        self.run.setObjectName('inverse')
-        self.run.setMinimumWidth(84)
-        self.run.clicked.connect(lambda: self.c.pause() if self.c.running else self.c.start())
-        row.addWidget(self.run, 0, Qt.AlignVCenter)
-        box.addLayout(row);layout.addWidget(self.control_panel)
+        columns=QHBoxLayout();columns.setSpacing(16)
+        self.focus_panel,box=card();box.setSpacing(12)
+        row=QHBoxLayout()
+        row.addWidget(label('Live preview','heading'),1)
+        self.latency=label('','faint');row.addWidget(self.latency)
+        box.addLayout(row)
+        self.canvas=SceneCanvas(self.c);box.addWidget(self.canvas,1)
+        self.control_panel=QWidget()
+        footer=QHBoxLayout(self.control_panel);footer.setContentsMargins(0,0,0,0);footer.setSpacing(16)
+        call=QVBoxLayout();call.setSpacing(2)
+        self.target=label('Paused','call',True)
+        self.reason=label('','muted',True)
+        call.addWidget(self.target);call.addWidget(self.reason)
+        footer.addLayout(call,1)
+        self.legend_gaze=QWidget();gaze_legend=QHBoxLayout(self.legend_gaze)
+        gaze_legend.setContentsMargins(0,0,0,0);gaze_legend.setSpacing(6)
+        gaze_legend.addWidget(swatch(GAZE_DOT,dot=True));gaze_legend.addWidget(label('Gaze dot','faint'))
+        footer.addWidget(self.legend_gaze,0,Qt.AlignTop)
+        focus_legend=QHBoxLayout();focus_legend.setSpacing(6)
+        focus_legend.addWidget(swatch(GAZE_FOCUS));focus_legend.addWidget(label('Current focus','faint'))
+        footer.addLayout(focus_legend);footer.setAlignment(focus_legend,Qt.AlignTop)
+        box.addWidget(self.control_panel)
+        columns.addWidget(self.focus_panel,1)
 
-        self.more_controls = QPushButton('More controls')
+        side=QWidget();side.setFixedWidth(304)
+        cards=QVBoxLayout(side);cards.setContentsMargins(0,0,0,0);cards.setSpacing(16)
+        self.build_phone_card(cards);self.build_accuracy_card(cards);self.build_quick_card(cards)
+        cards.addStretch()
+        columns.addWidget(side)
+        layout.addLayout(columns,1)
+
+        self.more_controls=QPushButton('More controls')
         self.more_controls.setObjectName('advanced')
-        layout.addWidget(self.more_controls, 0, Qt.AlignLeft)
-        controls = QWidget()
-        details = QVBoxLayout(controls)
-        details.setContentsMargins(0, 0, 0, 0)
-        connect_disclosure(self.more_controls, controls)
+        layout.addWidget(self.more_controls,0,Qt.AlignLeft)
+        frame,box=card()
+        connect_disclosure(self.more_controls,frame)
         self.more_controls.toggled.connect(self.refresh_control_panel)
-        layout.addWidget(controls)
-        frame, box = panel()
-        row = QHBoxLayout()
-        self.voice_lamp = Lamp('Microphone')
+        row=QHBoxLayout();row.setSpacing(12)
+        self.voice_lamp=Lamp('Microphone')
         row.addWidget(self.voice_lamp)
-        column = QVBoxLayout()
-        column.addWidget(label('Microphone', 'heading'))
-        self.voice_value = label('Off', 'muted', True)
+        column=QVBoxLayout();column.setSpacing(2)
+        column.addWidget(label('Microphone','heading'))
+        self.voice_value=label('Off','muted',True)
         column.addWidget(self.voice_value)
-        row.addLayout(column, 1)
-        self.voice_btn = QPushButton('Turn on microphone')
+        row.addLayout(column,1)
+        self.voice_btn=QPushButton('Turn on microphone')
         self.voice_btn.clicked.connect(self.c.toggle_microphone)
         row.addWidget(self.voice_btn)
         box.addLayout(row)
-        details.addWidget(frame)
-
-        self.scene_map_button=QPushButton('Show screen map')
-        self.scene_map_button.clicked.connect(lambda:self.update_setting(
-            'show_scene_map', not self.settings.get('show_scene_map',False)))
-        details.addWidget(self.scene_map_button,0,Qt.AlignLeft)
-        self.focus_panel=QFrame();self.focus_panel.setObjectName('mapPanel')
-        self.focus_panel.setMaximumHeight(350)
-        box=QVBoxLayout(self.focus_panel)
-        box.setContentsMargins(0,0,0,0);box.setSpacing(0)
-        self.canvas=SceneCanvas(self.c);box.addWidget(self.canvas,1)
-        legend_strip=QWidget();legend_strip.setSizePolicy(QSizePolicy.Preferred,QSizePolicy.Fixed)
-        legend=QHBoxLayout(legend_strip);legend.setContentsMargins(12,0,12,10);legend.setSpacing(16)
-        self.legend_gaze=QWidget();gaze_legend=QHBoxLayout(self.legend_gaze)
-        gaze_legend.setContentsMargins(0,0,0,0);gaze_legend.setSpacing(6)
-        gaze_legend.addWidget(swatch('#86DDFF',dot=True));gaze_legend.addWidget(label('Gaze dot','railMuted'))
-        legend.addWidget(self.legend_gaze)
-        action_legend=QHBoxLayout();action_legend.setSpacing(6)
-        action_legend.addWidget(swatch('#F5CD69'));action_legend.addWidget(label('Yellow frame · current focus','railMuted'))
-        legend.addLayout(action_legend);legend.addStretch()
-        self.latency=label('','railMuted');legend.addWidget(self.latency)
-        box.addWidget(legend_strip);details.addWidget(self.focus_panel)
-        layout.addStretch()
-
-    def build_phone_card(self, layout):
-        frame, box = panel()
-        box.setContentsMargins(22, 18, 22, 18)
-        self.gaze_heading = label('iPhone gaze tracking', 'heading', True)
-        self.gaze_value = label('', 'muted', True)
-        box.addWidget(self.gaze_heading)
-        box.addWidget(self.gaze_value)
-
-        row = QHBoxLayout()
-        self.gaze_btn = QPushButton('Set up iPhone')
-        self.gaze_btn.setObjectName('primary')
-        self.gaze_btn.clicked.connect(self.activate_phone)
-        row.addWidget(self.gaze_btn)
-        self.mouse_preview = QPushButton('Try with mouse')
-        self.mouse_preview.clicked.connect(self.open_mouse_preview)
-        row.addWidget(self.mouse_preview)
-        self.disconnect_phone = QPushButton('Disconnect iPhone')
-        self.disconnect_phone.clicked.connect(self.c.toggle_phone)
-        row.addWidget(self.disconnect_phone)
-        row.addStretch()
-        box.addLayout(row)
-
-        links = QHBoxLayout()
-        self.phone_settings_button = QPushButton('Connection settings')
-        self.phone_settings_button.setObjectName('link')
-        self.phone_settings_button.clicked.connect(self.open_phone_settings)
-        links.addWidget(self.phone_settings_button)
-        self.use_wifi_button = QPushButton('Use Wi‑Fi instead')
-        self.use_wifi_button.setObjectName('link')
-        self.use_wifi_button.clicked.connect(self.use_wifi)
-        links.addWidget(self.use_wifi_button)
-        links.addStretch()
-        box.addLayout(links)
         layout.addWidget(frame)
 
+    def build_phone_card(self,layout):
+        frame,box=card();box.setSpacing(12);box.setContentsMargins(18,14,18,14)
+        row=QHBoxLayout();row.setSpacing(14)
+        self.phone_glyph=PhoneGlyph()
+        row.addWidget(self.phone_glyph,0,Qt.AlignTop)
+        text=QVBoxLayout();text.setSpacing(3)
+        self.gaze_heading=label('iPhone gaze tracking','heading',True)
+        self.gaze_value=label('','muted',True)
+        text.addWidget(self.gaze_heading);text.addWidget(self.gaze_value);text.addStretch()
+        row.addLayout(text,1)
+        box.addLayout(row)
+        actions=QHBoxLayout();actions.setSpacing(14)
+        self.disconnect_phone=QPushButton('Disconnect iPhone')
+        self.disconnect_phone.clicked.connect(self.c.toggle_phone)
+        actions.addWidget(self.disconnect_phone)
+        self.phone_settings_button=QPushButton('Connection settings')
+        self.phone_settings_button.setObjectName('link')
+        self.phone_settings_button.clicked.connect(self.open_phone_settings)
+        actions.addWidget(self.phone_settings_button)
+        self.use_wifi_button=QPushButton('Use Wi‑Fi instead')
+        self.use_wifi_button.setObjectName('link')
+        self.use_wifi_button.clicked.connect(self.use_wifi)
+        actions.addWidget(self.use_wifi_button)
+        actions.addStretch()
+        box.addLayout(actions)
+        layout.addWidget(frame)
+
+    def build_accuracy_card(self,layout):
+        frame,box=card();box.setSpacing(8);box.setContentsMargins(18,14,18,14)
+        row=QHBoxLayout()
+        row.addWidget(label('Accuracy','heading'),1)
+        details=QPushButton('Details');details.setObjectName('link')
+        details.setAccessibleName('Calibration details')
+        details.clicked.connect(lambda:self.navigate(1))
+        row.addWidget(details)
+        box.addLayout(row)
+        self.accuracy_note=label('','muted',True)
+        box.addWidget(self.accuracy_note)
+        self.accuracy_rows=QWidget()
+        rows=QVBoxLayout(self.accuracy_rows);rows.setContentsMargins(0,0,0,0);rows.setSpacing(8)
+        self.overview_metrics=self.metric_rows(rows)
+        box.addWidget(self.accuracy_rows)
+        layout.addWidget(frame)
+
+    def build_quick_card(self,layout):
+        frame,box=card();box.setSpacing(8);box.setContentsMargins(18,14,18,14)
+        box.addWidget(label('Quick settings','heading'))
+        self.add_check(box,'show_gaze','Show gaze dot')
+        box.addWidget(rule())
+        self.quick_magnetic=Switch('Magnetic focus')
+        self.quick_magnetic.setToolTip('Frame one element instead of lighting the area around your gaze.')
+        self.quick_magnetic.toggled.connect(lambda on:self.update_setting('highlight_mode','magnetic' if on else 'radial'))
+        box.addWidget(self.quick_magnetic)
+        box.addWidget(rule())
+        self.add_check(box,'quiet_mode','Quiet mode').setToolTip('Hide the highlight while tracking stays on.')
+        layout.addWidget(frame)
+
+    def metric_rows(self,layout,explain=False):
+        """One ruled row per accuracy figure. Its meaning is spelled out below it, or kept in a tooltip."""
+        values={}
+        for key,title,meaning in METRICS:
+            layout.addWidget(rule())
+            row=QHBoxLayout();name=label(title,'muted');value=label('—','metric');values[key]=value
+            row.addWidget(name,1);row.addWidget(value)
+            layout.addLayout(row)
+            if explain:layout.addWidget(label(meaning,'faint',True))
+            else:name.setToolTip(meaning)
+        return values
+
     def build_profile(self):
-        layout=self.page('Profile','Setup creates your gaze profile. Click learning can refine it.')
-        frame,box=panel();self.profile_title=label('Set up your gaze profile','heading',True)
+        layout,_,header=self.page('Calibration','Gaze setup teaches Mira your eyes. Click learning can refine it.',860)
+        self.profile_setup=QPushButton('Set up · about a minute')
+        self.profile_setup.setObjectName('primary');self.profile_setup.clicked.connect(self.open_setup)
+        header.addWidget(self.profile_setup,0,Qt.AlignBottom)
+        frame,box=card();self.profile_title=label('Set up your gaze profile','heading',True)
         self.profile_detail=label('','muted',True);box.addWidget(self.profile_title);box.addWidget(self.profile_detail)
+        box.addSpacing(4)
         steps=QHBoxLayout();steps.setSpacing(12)
         for number,title,hint in (
             ('1','Connect','Sit comfortably'),('2','Gaze setup','9 points, about a minute'),('3','Check','5 new points'),
         ):
-            step=QHBoxLayout();step.setSpacing(7);step.setAlignment(Qt.AlignTop)
+            step=QHBoxLayout();step.setSpacing(9);step.setAlignment(Qt.AlignTop)
             number_label=label(number,'step');number_label.setFixedSize(22,22);number_label.setAlignment(Qt.AlignCenter)
             step.addWidget(number_label,0,Qt.AlignTop)
             caption=QVBoxLayout();caption.setSpacing(2)
             caption.addWidget(label(title,'heading'))
-            caption.addWidget(label(hint,'muted',True))
+            caption.addWidget(label(hint,'muted'))
             step.addLayout(caption);steps.addLayout(step,1)
-        box.addLayout(steps);row=QHBoxLayout();self.profile_setup=QPushButton('Set up · about a minute')
-        self.profile_setup.setObjectName('primary');self.profile_setup.clicked.connect(self.open_setup)
-        row.addWidget(self.profile_setup);row.addStretch();box.addLayout(row);layout.addWidget(frame)
+        box.addLayout(steps);layout.addWidget(frame)
         self.no_setup_results=label('No setup results yet','muted')
         layout.addWidget(self.no_setup_results)
-        self.validation_panel,box=panel()
+        self.validation_panel,box=card()
         row=QHBoxLayout()
         self.validation_verdict=label('','heading',True);row.addWidget(self.validation_verdict,1)
         self.validation_toggle=QPushButton('Details');self.validation_toggle.setObjectName('advanced')
@@ -484,20 +423,23 @@ class Window(QMainWindow):
         box.addWidget(self.validation_details)
         connect_disclosure(self.validation_toggle,self.validation_details)
         self.validation_hint=label('','muted',True)
-        details.addWidget(self.validation_hint);self.metrics={}
-        for key,title in (('median_px','Typical error'),('p90_px','Hard points'),('coverage','Coverage')):
-            details.addWidget(rule())
-            row=QHBoxLayout();value=label('—','metric');self.metrics[key]=value
-            row.addWidget(label(title),1);row.addWidget(value)
-            details.addLayout(row)
+        details.addWidget(self.validation_hint)
+        self.metrics=self.metric_rows(details,explain=True)
         layout.addWidget(self.validation_panel)
-        frame,box=panel();row=QHBoxLayout();row.addWidget(label('Click learning','heading'),1)
-        self.click_details_toggle=QPushButton('Details');self.click_details_toggle.setAccessibleName('Click learning details')
+        self.learning_advanced=QPushButton('Advanced');self.learning_advanced.setObjectName('advanced')
+        layout.addWidget(self.learning_advanced,0,Qt.AlignLeft)
+        learning=QWidget();advanced=QVBoxLayout(learning)
+        advanced.setContentsMargins(0,0,0,0);advanced.setSpacing(16)
+        layout.addWidget(learning)
+        connect_disclosure(self.learning_advanced,learning)
+        frame,box=card();row=QHBoxLayout();row.addWidget(label('Click learning','heading'),1)
+        self.click_details_toggle=QPushButton('Details');self.click_details_toggle.setObjectName('advanced')
+        self.click_details_toggle.setAccessibleName('Click learning details')
         row.addWidget(self.click_details_toggle);box.addLayout(row)
         self.click_plain_status=label('','muted',True);box.addWidget(self.click_plain_status)
-        row=QHBoxLayout()
-        self.click_learning=QCheckBox('Refine gaze using clicks');self.click_learning.toggled.connect(self.c.set_click_learning)
-        row.addWidget(self.click_learning,1)
+        row=QHBoxLayout();row.setSpacing(16)
+        self.click_learning=self.add_check(row,'click_learning','Refine gaze using clicks',commit=self.c.set_click_learning)
+        row.addStretch()
         self.undo_learning=QPushButton('Undo last correction');self.undo_learning.clicked.connect(self.c.undo_learning)
         row.addWidget(self.undo_learning);box.addLayout(row)
         self.click_details=QWidget();details=QVBoxLayout(self.click_details)
@@ -507,33 +449,30 @@ class Window(QMainWindow):
         self.click_summary=label('','muted',True);details.addWidget(self.click_summary)
         self.learning_model=label('','muted',True);details.addWidget(self.learning_model)
         box.addWidget(self.click_details);connect_disclosure(self.click_details_toggle,self.click_details)
-        layout.addWidget(frame)
-        frame,box=panel();row=QHBoxLayout();row.addWidget(label('Next target prediction','heading'),1)
-        self.prediction_details_toggle=QPushButton('Details');self.prediction_details_toggle.setAccessibleName('Next target prediction details')
+        advanced.addWidget(frame)
+        frame,box=card();row=QHBoxLayout();row.addWidget(label('Next target prediction','heading'),1)
+        self.prediction_details_toggle=QPushButton('Details');self.prediction_details_toggle.setObjectName('advanced')
+        self.prediction_details_toggle.setAccessibleName('Next target prediction details')
         row.addWidget(self.prediction_details_toggle);box.addLayout(row)
         self.prediction_plain_status=label('','muted',True);box.addWidget(self.prediction_plain_status)
         self.prediction_status=label('','muted',True);box.addWidget(self.prediction_status)
         connect_disclosure(self.prediction_details_toggle,self.prediction_status)
-        layout.addWidget(frame)
+        advanced.addWidget(frame)
         layout.addWidget(label('Run setup again if you move your iPhone or monitor. Mira doesn’t automatically save video or audio.','muted',True));layout.addStretch()
 
     def build_practice(self):
-        layout = self.page('Practice', 'See how Mira highlights a button as you look at it or move your mouse.')
-        row = QHBoxLayout()
-        row.setSpacing(12)
+        layout,_,header = self.page('Practice', 'See how Mira highlights a button as you look at it or move your mouse.')
+        self.pointer = Switch('Try with mouse')
+        self.pointer.toggled.connect(self.toggle_pointer)
+        header.addWidget(self.pointer, 0, Qt.AlignBottom)
+        header.addSpacing(8)
         self.practice_button = QPushButton('Connect iPhone')
         self.practice_button.setObjectName('primary')
         self.practice_button.clicked.connect(self.toggle_practice)
-        row.addWidget(self.practice_button)
-        self.pointer = QCheckBox('Try with mouse')
-        self.pointer.toggled.connect(self.toggle_pointer)
-        row.addWidget(self.pointer)
-        row.addStretch()
-        layout.addLayout(row)
-        layout.addSpacing(4)
+        header.addWidget(self.practice_button, 0, Qt.AlignBottom)
 
         stage = QFrame()
-        stage.setObjectName('practiceStage')
+        stage.setObjectName('inset')
         stage.setMinimumHeight(288)
         grid = QGridLayout(stage)
         grid.setContentsMargins(24, 24, 24, 24)
@@ -557,7 +496,6 @@ class Window(QMainWindow):
             grid.addWidget(button, target_row, target_column, Qt.AlignVCenter)
             self.practice_buttons[text] = button
         layout.addWidget(stage, 1)
-        layout.addSpacing(4)
 
         feedback = QHBoxLayout()
         feedback.setSpacing(8)
@@ -569,27 +507,27 @@ class Window(QMainWindow):
         feedback.addWidget(self.practice_result, 1)
         layout.addLayout(feedback)
 
-        self.practice_command = QLineEdit()
-        self.practice_command.setAccessibleName('Type a command')
-        self.practice_command.setPlaceholderText('click Plus')
-        self.practice_command.returnPressed.connect(self.submit)
-        command = label('Type a command')
-        command.setBuddy(self.practice_command)
-        layout.addWidget(command)
-        command_row = QHBoxLayout()
-        command_row.addWidget(self.practice_command, 1)
-        self.run_practice_command = QPushButton('Run command')
-        self.run_practice_command.clicked.connect(self.submit)
-        command_row.addWidget(self.run_practice_command)
-        layout.addLayout(command_row)
-
         self.practice_tools_button = QPushButton('More practice tools')
         self.practice_tools_button.setObjectName('advanced')
         layout.addWidget(self.practice_tools_button, 0, Qt.AlignLeft)
         tools = QWidget()
         fields = QVBoxLayout(tools)
         fields.setContentsMargins(0, 0, 0, 0)
-        fields.setSpacing(4)
+        fields.setSpacing(6)
+        self.practice_command = QLineEdit()
+        self.practice_command.setAccessibleName('Type a command')
+        self.practice_command.setPlaceholderText('click Plus')
+        self.practice_command.returnPressed.connect(self.submit)
+        command = label('Type a command')
+        command.setBuddy(self.practice_command)
+        fields.addWidget(command)
+        command_row = QHBoxLayout()
+        command_row.addWidget(self.practice_command, 1)
+        self.run_practice_command = QPushButton('Run command')
+        self.run_practice_command.clicked.connect(self.submit)
+        command_row.addWidget(self.run_practice_command)
+        fields.addLayout(command_row)
+        fields.addSpacing(6)
         self.editor = QLineEdit()
         self.editor.setAccessibleName('Dictation field')
         dictation = label('Dictation')
@@ -608,8 +546,8 @@ class Window(QMainWindow):
         connect_disclosure(self.practice_tools_button, tools)
 
     def build_settings(self):
-        layout=self.page('Settings','Gaze tracking, highlights, and optional actions.')
-        frame,box=panel();box.addWidget(label('iPhone','heading'))
+        layout,_,_=self.page('Settings',width=860)
+        frame,box=card();box.addWidget(label('iPhone','heading'))
         self.phone_transport=SettingsComboBox();self.phone_transport.setAccessibleName('iPhone connection')
         self.phone_transport.addItem('Wi‑Fi · home network','wifi')
         self.phone_transport.addItem('USB · paired connection','usb')
@@ -631,14 +569,27 @@ class Window(QMainWindow):
         self.phone_transport.currentIndexChanged.connect(self.show_wifi_fields)
         box.addWidget(label('Wi‑Fi sends only eye and head data. Use a trusted home network because Mira doesn’t encrypt this connection.','muted',True))
         b=QPushButton('Save connection');b.clicked.connect(self.save_phone_connection);box.addWidget(b,0,Qt.AlignLeft);layout.addWidget(frame)
+        frame,box=card();box.addWidget(label('Highlight','heading'))
+        self.highlight_mode=SettingsComboBox();self.highlight_mode.setAccessibleName('Highlight mode')
+        self.highlight_mode.addItem('Follow gaze · dot and area','radial')
+        self.highlight_mode.addItem('Magnetic focus · one element','magnetic')
+        self.highlight_mode.setCurrentIndex(1 if self.settings.get('highlight_mode')=='magnetic' else 0)
+        self.highlight_mode.currentIndexChanged.connect(lambda _:self.update_setting('highlight_mode',self.highlight_mode.currentData()))
+        box.addWidget(self.highlight_mode)
+        self.highlight_hint=label('','muted',True);box.addWidget(self.highlight_hint)
+        self.show_gaze_check=self.add_check(box,'show_gaze','Show gaze dot')
+        self.quiet_mode_check=self.add_check(box,'quiet_mode','Quiet mode')
+        self.quiet_hint=label('Hide gaze cues while control stays on.','muted',True)
+        box.addWidget(self.quiet_hint)
+        layout.addWidget(frame)
         self.advanced=QPushButton('Advanced');self.advanced.setObjectName('advanced')
-        layout.addWidget(self.advanced)
+        layout.addWidget(self.advanced,0,Qt.AlignLeft)
         self.advanced_panel=QWidget();advanced=QVBoxLayout(self.advanced_panel)
-        advanced.setContentsMargins(0,0,0,0);advanced.setSpacing(10)
+        advanced.setContentsMargins(0,0,0,0);advanced.setSpacing(16)
         layout.addWidget(self.advanced_panel)
         connect_disclosure(self.advanced,self.advanced_panel)
         self.advanced.toggled.connect(self.list_microphones)
-        frame,box=panel();box.addWidget(label('Webcam · second angle','heading'))
+        frame,box=card();box.addWidget(label('Webcam · second angle','heading'))
         box.addWidget(label('If iPhone loses track of your gaze, a webcam you’ve set up can take over. Video stays on your PC and isn’t saved.','muted',True))
         row=QHBoxLayout();self.webcam_device=SettingsComboBox();self.webcam_device.setAccessibleName('Webcam')
         if self.settings.get('webcam_device_id'):
@@ -653,26 +604,14 @@ class Window(QMainWindow):
         self.webcam_status=label('Webcam off','muted',True);box.addWidget(self.webcam_status)
         box.addWidget(label('Setup uses 9 points and checks 5 new ones. Set up again if you move the webcam. The webcam starts off.','muted',True))
         advanced.addWidget(frame)
-        frame,box=panel();box.addWidget(label('Highlight','heading'))
-        self.highlight_mode=SettingsComboBox();self.highlight_mode.setAccessibleName('Highlight mode')
-        self.highlight_mode.addItem('Follow gaze · dot and area','radial')
-        self.highlight_mode.addItem('Magnetic focus · one element','magnetic')
-        self.highlight_mode.setCurrentIndex(1 if self.settings.get('highlight_mode')=='magnetic' else 0)
-        self.highlight_mode.currentIndexChanged.connect(lambda _:self.update_setting('highlight_mode',self.highlight_mode.currentData()))
-        box.addWidget(self.highlight_mode)
-        self.highlight_hint=label('','muted',True);box.addWidget(self.highlight_hint)
-        self.show_gaze_check=self.add_check(box,'show_gaze','Show gaze dot')
-        self.anticipation_check=QCheckBox('Show a possible next target');self.anticipation_check.toggled.connect(self.c.set_anticipation)
-        box.addWidget(self.anticipation_check)
-        self.quiet_mode_check=self.add_check(box,'quiet_mode','Quiet mode')
-        self.quiet_hint=label('Hide gaze cues while control stays on.','muted',True)
-        box.addWidget(self.quiet_hint)
-        advanced.addWidget(frame)
-        frame,box=panel();box.addWidget(label('Optional actions','heading'))
+        frame,box=card();box.addWidget(label('Optional actions','heading'))
         box.addWidget(label('With the microphone on, say “click” to activate the yellow target. Hold Shift to select with the mouse.','muted',True))
         self.add_check(box,'dwell_enabled','Click by holding your gaze','Keep looking at the same target to click automatically. This is off by default.')
-        self.add_slider(box,'dwell_ms','Hold time',700,2500);advanced.addWidget(frame)
-        frame,box=panel();box.addWidget(label('Voice and recognition','heading'))
+        self.add_slider(box,'dwell_ms','Hold time',700,2500)
+        self.anticipation_check=self.add_check(box,'anticipation','Show a possible next target',
+            'Purple marks what you might look at next. It learns from your clicks.',commit=self.c.set_anticipation)
+        advanced.addWidget(frame)
+        frame,box=card();box.addWidget(label('Voice and recognition','heading'))
         microphone_form=QFormLayout()
         microphone_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         self.microphone_picker=SettingsComboBox();self.microphone_picker.setAccessibleName('Microphone')
@@ -695,18 +634,27 @@ class Window(QMainWindow):
             model_form.addRow(name,field)
         box.addLayout(model_form)
         box.addWidget(label('A remote API receives your command and the element map. When screen recognition is on, it also receives an image of the window. Use a secure local proxy for API keys.','muted',True))
-        b=QPushButton('Save voice and model settings');b.clicked.connect(self.save_connections);box.addWidget(b)
-        advanced.addWidget(frame);layout.addStretch()
+        b=QPushButton('Save voice and model settings');b.clicked.connect(self.save_connections);box.addWidget(b,0,Qt.AlignLeft)
+        advanced.addWidget(frame)
+        layout.addWidget(label('Version 1.3.1','faint'));layout.addStretch()
 
-    def add_check(self,layout,key,text,hint=''):
-        check=QCheckBox(text);check.setChecked(bool(self.settings[key]))
-        def commit(value):
-            if not self.update_setting(key,value):
-                with QSignalBlocker(check):
-                    check.setChecked(bool(self.settings[key]))
-        check.toggled.connect(commit);layout.addWidget(check)
+    def add_check(self,layout,key,text,hint='',commit=None):
+        """A switch for one saved setting. Every switch of the same setting stays in step."""
+        check=Switch(text);check.setChecked(bool(self.settings[key]))
+        def apply(value):
+            if commit:commit(value)
+            else:self.update_setting(key,value)
+            self.sync_checks()
+        check.toggled.connect(apply);layout.addWidget(check)
+        self.setting_checks.setdefault(key,[]).append(check)
         if hint:layout.addWidget(label(hint,'muted',True))
         return check
+
+    def sync_checks(self):
+        for key,checks in self.setting_checks.items():
+            for check in checks:
+                with QSignalBlocker(check):
+                    check.setChecked(bool(self.settings[key]))
 
     def add_slider(self,layout,key,title,lo,hi):
         row=QHBoxLayout();row.addWidget(label(title),1);value=label(f'{self.settings[key]} ms','metric');row.addWidget(value);layout.addLayout(row)
@@ -744,7 +692,7 @@ class Window(QMainWindow):
         self.settings.update(updated)
         if key=='ranker' and not value:
             self.c.stop_ranker()
-        if key in ('quiet_mode','show_scene_map'):
+        if key=='quiet_mode':
             self.last_paint=0;self.refresh()
         if key=='highlight_mode':
             self.c.fusion.reset();self.c.dwell_id=None
@@ -1056,18 +1004,26 @@ class Window(QMainWindow):
         report=(state.get('report') if available else state.get('last_result')) or {}
         self.validation_panel.setVisible(bool(report))
         self.no_setup_results.setVisible(not report)
+        self.accuracy_rows.setVisible(bool(report))
         if not report:
+            self.accuracy_note.setText('Run gaze setup to see how close Mira gets to where you look.')
             return
         good = report.get('usable') is True
-        self.validation_verdict.setText('Accuracy: Good' if good else 'Accuracy: Fair · try setup again')
-        for key,widget in self.metrics.items():
-            value=report.get(key);widget.setText('—' if not isinstance(value,(int,float)) else f'{value*100:.0f}%' if key=='coverage' else f'{value:.0f} px')
+        self.validation_verdict.setText('Ready for panels and large buttons' if good else 'Needs another try')
+        self.accuracy_note.setText('Best for panels and large buttons.' if good else
+                                   'Not accurate enough yet. Run setup again.')
+        for key,_,_ in METRICS:
+            value=report.get(key)
+            text='—' if not isinstance(value,(int,float)) else f'{value*100:.0f}%' if key=='coverage' else f'{value:.0f} px'
+            self.metrics[key].setText(text);self.overview_metrics[key].setText(text)
         source='Saved setup · ' if available else 'Latest attempt · '
         self.validation_hint.setText(source+('ready to refine with clicks.' if good else
                                      'needs refinement. '+' '.join(report.get('problems', [])[:2])))
 
     def refresh_control_panel(self):
-        self.control_panel.setVisible(self.c.running or self.c.output_pending or self.more_controls.isChecked())
+        visible=self.c.running or self.c.output_pending or self.more_controls.isChecked()
+        self.control_panel.setVisible(visible and not self.canvas.blocked)
+        self.run.setVisible(visible)
 
     def refresh_sources(self, now):
         c = self.c
@@ -1123,8 +1079,27 @@ class Window(QMainWindow):
         else:
             status = 'Gaze setup saved. Start tracking in Mira on your iPhone.'
             action = 'Connect iPhone'
+        if needs_setup:
+            pill = ('off', 'Not set up')
+            idle = (('Set up again for this screen', 'Mira can’t use the saved gaze setup here. Select Set up iPhone to redo it.', True)
+                    if c.phone_needs_setup else
+                    ('See where you’re looking', 'Stand your iPhone under the screen with the front camera facing you. '
+                     'Open Mira on it and tap Start Tracking, then select Set up iPhone.', True))
+        elif phone_state == 'hold':
+            pill, idle = ('hold', 'Not connected'), (heading, status+' Then select Try again.', False)
+        elif phone_state == 'off':
+            pill = ('off', 'Ready to connect')
+            idle = ('Ready when you are', 'Open Mira on your iPhone and tap Start Tracking, then select Connect iPhone.', True)
+        else:
+            pill = ('go', 'Tracking') if phone_state == 'go' else ('standby', 'Waiting for your gaze' if has_frames else 'Connecting')
+            idle = ('Tracking is paused', 'Select Start to see where you’re looking.', False)
         if c.gaze_source_mode == 'webcam':
             status += ' Using webcam.'
+            pill = ('go', 'Tracking with webcam')
+        self.state_pill.set_state(*pill)
+        self.phone_glyph.set_state(phone_state)
+        self.canvas.idle = idle
+        self.canvas.blocked = phone_state == 'hold' and c.gaze_source_mode != 'webcam' and not c.pointer_mode
         self.gaze_heading.setText(heading)
         self.gaze_value.setText(status)
         self.gaze_btn.setText(action)
@@ -1141,9 +1116,10 @@ class Window(QMainWindow):
 
         for name, state, word in (('iPhone', phone_state, phone_word),
                                   ('Microphone', c.voice_state, voice_word)):
-            lamp, caption = self.rail_sources[name]
+            lamp, caption, chip = self.sources[name]
             lamp.set_state(state, word)
             caption.setText(word)
+            chip.setVisible(name == 'iPhone' or state != 'off')
         self.voice_lamp.set_state(c.voice_state, voice_word)
         return phone_state
 
@@ -1165,23 +1141,20 @@ class Window(QMainWindow):
         self.webcam_status.setText(c.webcam_status)
         self.webcam_toggle.setText('Disconnect webcam' if c.webcam is not None else 'Connect webcam')
         self.webcam_setup.setEnabled(not c.output_pending and not c.busy)
-        self.quiet_mode_check.blockSignals(True);self.quiet_mode_check.setChecked(quiet);self.quiet_mode_check.blockSignals(False)
+        self.sync_checks()
         self.quiet_hint.setText('Gaze cues are hidden. Click learning and connections follow your settings.' if quiet else
                                 'Hide gaze cues while control stays on.')
-        show_map=not quiet and bool(self.settings.get('show_scene_map',False))
-        self.scene_map_button.setVisible(not quiet)
-        self.scene_map_button.setText('Hide screen map' if show_map else 'Show screen map')
-        self.scene_map_button.setAccessibleDescription('Expanded' if show_map else 'Collapsed')
-        self.focus_panel.setVisible(show_map)
-        self.canvas.setMinimumHeight(180 if c.running else 112)
-        self.focus_panel.setMaximumHeight(350 if c.running else 146)
         magnetic=self.settings.get('highlight_mode')=='magnetic'
         self.highlight_mode.blockSignals(True);self.highlight_mode.setCurrentIndex(1 if magnetic else 0);self.highlight_mode.blockSignals(False)
-        self.highlight_mode.setEnabled(not quiet and not c.busy and not c.output_pending)
-        self.show_gaze_check.setEnabled(not quiet and not magnetic);self.anticipation_check.setEnabled(not quiet and not magnetic)
+        for mode in (self.highlight_mode,self.quick_magnetic):
+            mode.setEnabled(not quiet and not c.busy and not c.output_pending)
+        with QSignalBlocker(self.quick_magnetic):
+            self.quick_magnetic.setChecked(magnetic)
+        for check in (*self.setting_checks['show_gaze'],self.anticipation_check):
+            check.setEnabled(not quiet and not magnetic)
         self.highlight_hint.setText('Quiet mode hides gaze cues.' if quiet else
                                    'Look at another element to move the yellow frame. This mode hides the gaze dot and prediction.' if magnetic else
-                                   'The blue dot follows your gaze. Yellow marks the current focus. Purple suggests what you might look at next.')
+                                   'The blue dot follows your gaze. Yellow marks the current focus.')
         self.legend_gaze.setVisible(not magnetic and self.settings['show_gaze'])
         self.profile_setup.setEnabled(not c.output_pending)
         phone_state=self.refresh_sources(now)
@@ -1206,23 +1179,20 @@ class Window(QMainWindow):
         self.reason.setText(reason)
         self.reason.setVisible(bool(reason))
         scene_detail = ''
-        if show_map and c.scene and c.running:
+        if not quiet and c.scene and c.running:
             scene_detail = f'{len(c.scene.current_elements(now))} screen elements'
             if c.scene.latency_ms > 0:
                 scene_detail += f' · {c.scene.latency_ms:.0f} ms'
         self.latency.setText(scene_detail)
-        self.latency.setVisible(bool(self.latency.text()))
         self.status.setText(c.status)
-        if show_map:self.canvas.update()
+        self.canvas.update()
 
     def refresh_learning(self, phone_state):
         c=self.c
-        self.click_learning.blockSignals(True);self.click_learning.setChecked(bool(self.settings.get('click_learning',True)));self.click_learning.blockSignals(False)
-        self.anticipation_check.blockSignals(True);self.anticipation_check.setChecked(bool(self.settings.get('anticipation',True)));self.anticipation_check.blockSignals(False)
         self.click_hint.setText(c.click_status)
         progress=c.learning.click_progress
         learned=progress['accepted']
-        if not self.click_learning.isChecked():
+        if not self.settings.get('click_learning',True):
             click_status='Click learning is off.'
         elif learned:
             count='one' if learned==1 else str(learned)
@@ -1237,7 +1207,7 @@ class Window(QMainWindow):
         self.click_summary.setText(f'This session · used {counts["accepted"]} of {counts["seen"]} · gaze elsewhere {counts["away"]} · too little data {counts["quality"]}')
         self.learning_model.setText(c.learning.model_status if c.learning.key is not None else 'Connect a working gaze profile to refine it.')
         predictor=c.anticipation
-        if not self.anticipation_check.isChecked():
+        if not self.settings.get('anticipation',True):
             prediction_status='Prediction is off.'
         elif predictor.error:
             prediction_status='Prediction learning is unavailable.'

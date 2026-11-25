@@ -31,6 +31,6 @@ context-operator = "context_operator.app:main"
 include = ["context_operator*"]
 
 [tool.setuptools.package-data]
-context_operator = ["assets/*.json", "assets/*.npz", "assets/*.svg", "assets/*.png", "assets/*.ico"]
+context_operator = ["assets/*.json", "assets/*.npz", "assets/*.png", "assets/*.ico"]
 "context_operator.foundations.perception" = ["perception-models.json"]
 "context_operator.foundations.ranking" = ["model.json"]

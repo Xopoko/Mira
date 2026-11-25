@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Redesign the Windows app as a dark companion app. **Overview** now leads
+  with a live preview of your screen beside the iPhone, accuracy and quick
+  settings. **Profile** is now **Calibration**, the highlight settings moved
+  out of **Advanced**, and the screen map no longer needs a setting. Click
+  learning, next-target prediction and typed commands sit behind **Advanced**
+  and **More practice tools**.
+- Gaze setup shows its result, what it means and the next button in one
+  place, and no longer says it kept a profile when there was none.
+- Redesign the iPhone companion to match. It shows a monitor with the gaze
+  light following your eyes in place of the top-down plan, as soon as it sees
+  you and before the PC connects. The connection settings moved to their own
+  page, and the app is dark only. The iPhone companion is at 0.4.0.
 - Bring gaze tracking and screen contours to the front of the Windows setup.
 - Make local voice commands optional during setup and ordinary tracking.
 - Remove USB confirmation buttons. The iPhone USB connection remains available.

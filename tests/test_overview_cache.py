@@ -8,6 +8,7 @@ from PySide6.QtGui import QColor,QImage,QPainter
 from PySide6.QtCore import QRectF,QPointF,QPoint
 from context_operator.ui.overview_cache import OverviewCache
 from context_operator.ui.light_cache import tile_bounds
+from context_operator.ui.theme import RAIL
 from context_operator.ui.window import SceneCanvas
 from context_operator.core.contracts import Rect,Element,WindowMap,Scene,Focus,Gaze
 from context_operator.core.fusion import Fusion
@@ -41,9 +42,9 @@ class OverviewTests(unittest.TestCase):
         window=WindowMap(1,1,bounds,10,(item,),(bounds,))
         c=SimpleNamespace(running=True,scene=Scene(1,10,bounds,(item,),1,windows=(window,)),attention=None,prediction=None,
                           focus=Focus(),fusion=Fusion(),settings={})
-        canvas=SceneCanvas(c);canvas.resize(500,200)
+        canvas=SceneCanvas(c);canvas.resize(500,240)
         self.addCleanup(canvas.close)
-        image=QImage(500,200,QImage.Format_ARGB32_Premultiplied)
+        image=QImage(500,240,QImage.Format_ARGB32_Premultiplied)
         def frame(now):
             image.fill(0);p=QPainter(image)
             with patch('context_operator.ui.window.time.monotonic',return_value=now):canvas.render(p,QPoint())
@@ -54,12 +55,12 @@ class OverviewTests(unittest.TestCase):
         from context_operator.ui.light_cache import LIGHT_CACHE
         self.assertIsNot(canvas.light_cache, LIGHT_CACHE)
         c.attention = None
-        background = QColor('#141414')
-        contour = (151, 47)
+        background = QColor(RAIL)
+        element = (126, 58)
         frame(10.2)
-        self.assertNotEqual(image.pixelColor(*contour), background)
+        self.assertNotEqual(image.pixelColor(*element), background)
         frame(11.3)
-        self.assertEqual(image.pixelColor(*contour), background)
+        self.assertEqual(image.pixelColor(*element), background)
 
 
 if __name__=='__main__':unittest.main()

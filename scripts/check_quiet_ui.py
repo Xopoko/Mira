@@ -37,7 +37,7 @@ with tempfile.TemporaryDirectory() as folder, \
      patch.object(Window,'refresh_profile'), \
      patch('context_operator.ui.window.time.monotonic',return_value=10.1):
     c=Controller(dict(DEFAULTS,vision=False,ranker=False,click_learning=True,anticipation=True,
-                      game_gaze_enabled=True,dwell_enabled=True,show_scene_map=True))
+                      game_gaze_enabled=True,dwell_enabled=True))
     c.timer.stop();window=Window(c);window.refresh_timer.stop();window.show()
     bounds=Rect(0,0,800,600)
     win=Mock();win.rect.return_value=bounds;win.u.GetWindowLongW.return_value=0
@@ -74,10 +74,10 @@ with tempfile.TemporaryDirectory() as folder, \
             assert c.running and c.focus is focus and c.action_epoch==epoch
             assert {key:c.settings[key] for key in original}==original
             assert c.settings['highlight_mode']==mode
-            assert window.focus_panel.isHidden() and not window.highlight_mode.isEnabled()
-            assert window.scene_map_button.isHidden() and c.settings['show_scene_map']
+            assert not window.highlight_mode.isEnabled() and not window.latency.text()
+            assert all(check.isChecked() for check in window.setting_checks['quiet_mode'])
             window.navigate(2);app.processEvents()
-            assert window.isVisible() and window.practice_command.isVisible()
+            assert window.isVisible() and window.practice_button.isVisible()
             assert overlay.ink.isEmpty() and ink(render(overlay))==0,mode
             assert overlay.center is None and overlay.prediction is None and overlay.focus_target is None
             with patch('context_operator.ui.window.paint_scene_light') as radial, \
@@ -98,7 +98,7 @@ with tempfile.TemporaryDirectory() as folder, \
             assert load()['quiet_mode'] is True and ink(render(overlay))==0
             window.quiet_mode_check.click();app.processEvents();overlay.animate()
             assert load()['quiet_mode'] is False
-            assert not window.focus_panel.isHidden() and ink(render(overlay))>0
+            assert not any(check.isChecked() for check in window.setting_checks['quiet_mode']) and ink(render(overlay))>0
         window.resize(window.minimumSize());window.navigate(3);app.processEvents()
         dwell=next(check for check in window.findChildren(QCheckBox) if check.text()=='Click by holding your gaze')
         slider=next(item for item in window.findChildren(QSlider) if item.accessibleName()=='Hold time')
@@ -120,7 +120,7 @@ with tempfile.TemporaryDirectory() as folder, \
         window.quiet_mode_check.click();app.processEvents()
         restored=Controller(load());restored.timer.stop()
         reopened=Window(restored);reopened.refresh_timer.stop();reopened.show();app.processEvents()
-        assert reopened.quiet_mode_check.isChecked() and reopened.focus_panel.isHidden()
+        assert all(check.isChecked() for check in reopened.setting_checks['quiet_mode'])
         assert reopened.isVisible() and reopened.nav[3].isVisible()
         reopened.close()
         c.pause.assert_not_called()
