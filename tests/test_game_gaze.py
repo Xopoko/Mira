@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 from context_operator.core.contracts import Gaze, GazeMeasurement, Rect
 from context_operator.providers.game_gaze import (
     FLAG_ACTIVE, MAGIC, PACKET, PACKET_SIZE, VERSION, GameGazePublisher,
-    eligible_gaze, pack_packet,
+    eligible_gaze, gaze_packet,
 )
 
 
@@ -21,21 +21,20 @@ class GameGazePacketTests(unittest.TestCase):
 
     def test_packet_is_fixed_little_endian_contract_and_preserves_capture_time(self):
         gaze, measurement = self.gaze_pair()
-        self.assertTrue(eligible_gaze(gaze, measurement, self.bounds, 10.05,
-                                      phone_present=True))
-        packet = pack_packet(9, gaze.captured, 10.05, gaze.x, gaze.y,
-                             self.bounds, gaze.radius, active=True)
+        active, packet = gaze_packet(9, gaze, measurement, self.bounds, 10.05, phone_present=True)
+        self.assertTrue(active)
         self.assertEqual(len(packet), 128)
         self.assertEqual(struct.unpack('<8sIIQ9d32s', packet),
                          (b'COGAZE1\0', 1, 1, 9, 10., 10.05, -1919., 100.,
                           -1920., 0., 3840., 1080., 42., bytes(32)))
 
     def test_inactive_packet_zeroes_coordinates_and_geometry(self):
-        packet = pack_packet(2, 0.0, 11.0)
+        active, packet = gaze_packet(2, *self.gaze_pair(), self.bounds, 11.0, phone_present=False)
+        self.assertFalse(active)
         self.assertEqual(len(packet), 128)
         magic, version, flags, seq, *tail = PACKET.unpack(packet)
         self.assertEqual((magic, version, flags, seq), (MAGIC, VERSION, 0, 2))
-        self.assertEqual(tail[2:9], [0.0] * 7)
+        self.assertEqual(tail[:9], [0.0, 11.0] + [0.0] * 7)
 
     def test_rejects_stale_future_mismatched_unsupported_and_attention_data(self):
         cases = (
@@ -62,13 +61,10 @@ class GameGazePacketTests(unittest.TestCase):
         outside, supported = self.gaze_pair(x=1920)
         self.assertFalse(eligible_gaze(outside, supported, self.bounds, 10.01, **common))
 
-    def test_active_packet_rejects_nonfinite_or_invalid_geometry(self):
-        with self.assertRaises(ValueError):
-            pack_packet(1, 1.0, 1.01, float("nan"), 2, self.bounds, 10, active=True)
-        with self.assertRaises(ValueError):
-            pack_packet(1, 1.0, 1.01, 0, 0, Rect(0, 0, 0, 10), 10, active=True)
-        with self.assertRaises(ValueError):
-            pack_packet(1, 2.0, 1.99, 0, 0, self.bounds, 10, active=True)
+    def test_rejects_nonfinite_gaze_and_empty_desktop(self):
+        common = dict(phone_present=True)
+        self.assertFalse(eligible_gaze(*self.gaze_pair(x=float("nan")), self.bounds, 10.01, **common))
+        self.assertFalse(eligible_gaze(*self.gaze_pair(x=0.0), Rect(0, 0, 0, 10), 10.01, **common))
 
 
 @unittest.skipUnless(os.name == "nt", "named mapping ownership requires Windows")
@@ -127,6 +123,16 @@ class GameGazeWindowsTests(unittest.TestCase):
         self.assertEqual([call.args for call in kernel.WaitForSingleObject.call_args_list],
                          [(1, 0), (2, 100), (2, 0), (2, 100)])
         self.assertEqual(open_mapping.return_value.write.call_count, 2)
+
+    def test_open_fails_when_the_previous_packet_cannot_be_cleared(self):
+        with patch('ctypes.WinDLL') as load_kernel, patch('mmap.mmap') as open_mapping:
+            kernel = load_kernel.return_value
+            kernel.CreateMutexW.side_effect = [1, 2]
+            kernel.WaitForSingleObject.side_effect = [0, 0x102, 0x102]
+            with self.assertRaises(OSError):
+                GameGazePublisher()
+        open_mapping.return_value.write.assert_not_called()
+        open_mapping.return_value.close.assert_called_once_with()
 
 
 class ControllerGameGazeIntegrationTests(unittest.TestCase):

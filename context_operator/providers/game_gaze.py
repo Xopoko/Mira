@@ -10,7 +10,7 @@ import math
 import struct
 import time
 
-from ..core.contracts import GAZE_TTL, Gaze, GazeMeasurement, Rect
+from ..core.contracts import GAZE_TTL
 
 MAPPING_NAME = r"Local\ContextOperator.Gaze.v1"
 LOCK_NAME = r"Local\ContextOperator.Gaze.v1.Lock"
@@ -22,91 +22,35 @@ VERSION = 1
 FLAG_ACTIVE = 1
 
 
-def _finite(value):
-    try:
-        return math.isfinite(float(value))
-    except (TypeError, ValueError, OverflowError):
-        return False
-
-
-def _desktop_values(desktop):
-    if not isinstance(desktop, Rect):
-        return None
-    try:
-        values = tuple(float(v) for v in (desktop.x, desktop.y, desktop.w, desktop.h))
-    except (TypeError, ValueError, OverflowError):
-        return None
-    return values if all(math.isfinite(v) for v in values) else None
-
-
-def pack_packet(sequence, captured_s, published_s, gaze_x=0.0, gaze_y=0.0,
-                desktop=None, radius=0.0, *, active=False):
-    """Build one validated 128-byte packet; inactive packets carry zero gaze."""
-    if not isinstance(sequence, int) or isinstance(sequence, bool) or not 0 <= sequence < 2**64:
-        raise ValueError("sequence must be an unsigned 64-bit integer")
-    if not _finite(captured_s) or not _finite(published_s):
-        raise ValueError("timestamps must be finite")
-    captured_s, published_s = float(captured_s), float(published_s)
-    if active:
-        desktop_values = _desktop_values(desktop)
-        if desktop_values is None or not all(_finite(v) for v in (gaze_x, gaze_y, radius)):
-            raise ValueError("active gaze values and desktop bounds must be finite")
-        gaze_x, gaze_y, radius = float(gaze_x), float(gaze_y), float(radius)
-        age = float(published_s) - float(captured_s)
-        if age < 0 or age >= GAZE_TTL - 1e-12:
-            raise ValueError("active gaze timestamp is future-dated or stale")
-        desktop_x, desktop_y, desktop_w, desktop_h = desktop_values
-        if desktop_w <= 0 or desktop_h <= 0 or radius <= 0:
-            raise ValueError("desktop dimensions and gaze radius must be positive")
-        if not (desktop_x <= float(gaze_x) < desktop_x + desktop_w
-                and desktop_y <= float(gaze_y) < desktop_y + desktop_h):
-            raise ValueError("gaze point is outside the physical desktop")
-        values = (float(captured_s), float(published_s), float(gaze_x), float(gaze_y),
-                  desktop_x, desktop_y, desktop_w, desktop_h,
-                  float(radius))
-        flags = FLAG_ACTIVE
-    else:
-        values = (float(captured_s), float(published_s), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-        flags = 0
-    return PACKET.pack(MAGIC, VERSION, flags, sequence, *values, bytes(32))
-
-
 def eligible_gaze(gaze, measurement, desktop, now, *, phone_present,
                   pointer_mode=False, mouse_control=False,
                   setup=False, running=True):
-    """Return whether this frame is eligible for export from the real gaze source."""
-    if (not running or not phone_present or pointer_mode or mouse_control or setup):
+    """Whether this frame is the fresh, supported, on-screen gaze of the iPhone."""
+    if not running or not phone_present or pointer_mode or mouse_control or setup:
         return False
-    if not isinstance(gaze, Gaze) or not isinstance(measurement, GazeMeasurement):
-        return False
-    desktop_values = _desktop_values(desktop)
-    if desktop_values is None:
+    if gaze is None or measurement is None or desktop is None:
         return False
     if gaze.source != "iphone" or not measurement.supported:
         return False
-    try:
-        if len(measurement.features) != 22 or len(measurement.point) != 2:
-            return False
-        if not all(_finite(value) for value in tuple(measurement.features) + tuple(measurement.point)):
-            return False
-    except (TypeError, ValueError):
-        return False
-    if not _finite(now) or not _finite(gaze.captured) or not _finite(measurement.captured):
-        return False
-    age = float(now) - float(gaze.captured)
-    if age < 0 or age >= GAZE_TTL - 1e-12:
-        return False
     # Corrected gaze keeps the source frame timestamp. A mismatch means that
     # the point and the supported TrueDepth measurement do not describe one frame.
-    if abs(float(gaze.captured) - float(measurement.captured)) > 1e-6:
+    if abs(gaze.captured - measurement.captured) > 1e-6:
         return False
-    if not all(_finite(v) for v in (gaze.x, gaze.y, gaze.radius)):
+    values = (gaze.x, gaze.y, gaze.radius, gaze.captured, now, desktop.x, desktop.y, desktop.w, desktop.h)
+    if not all(math.isfinite(value) for value in values) or desktop.w <= 0 or desktop.h <= 0 or gaze.radius <= 0:
         return False
-    desktop_x, desktop_y, desktop_w, desktop_h = desktop_values
-    gaze_x, gaze_y, radius = float(gaze.x), float(gaze.y), float(gaze.radius)
-    if desktop_w <= 0 or desktop_h <= 0 or radius <= 0:
+    # A reader compares against 200 ms too; rounding must not hand it a packet on the limit.
+    if not 0 <= now - gaze.captured < GAZE_TTL - 1e-12:
         return False
-    return desktop_x <= gaze_x < desktop_x + desktop_w and desktop_y <= gaze_y < desktop_y + desktop_h
+    return desktop.x <= gaze.x < desktop.x + desktop.w and desktop.y <= gaze.y < desktop.y + desktop.h
+
+
+def gaze_packet(sequence, gaze, measurement, desktop, now, **gates):
+    """Whether this frame is active, and its 128-byte packet. An inactive packet carries zero gaze and geometry."""
+    active = eligible_gaze(gaze, measurement, desktop, now, **gates)
+    values = ((gaze.captured, now, gaze.x, gaze.y, desktop.x, desktop.y, desktop.w, desktop.h, gaze.radius)
+              if active else (0., now, 0., 0., 0., 0., 0., 0., 0.))
+    return active, PACKET.pack(MAGIC, VERSION, FLAG_ACTIVE if active else 0, sequence, *values, bytes(32))
 
 
 class GameGazePublisher:
@@ -147,8 +91,9 @@ class GameGazePublisher:
             if not self._lock:
                 raise self._last_error("CreateMutexW(lock)")
             self._mapping = mmap.mmap(-1, PACKET_SIZE, tagname=MAPPING_NAME, access=mmap.ACCESS_WRITE)
-            # Make stale active state from a prior owner impossible to observe.
-            self.publish_inactive(time.monotonic())
+            # A prior owner's last packet must not stay readable as active.
+            if not self.publish_inactive(time.monotonic()):
+                raise OSError("a reader is holding the game gaze mapping")
         except Exception:
             self.close()
             raise
@@ -187,21 +132,15 @@ class GameGazePublisher:
     def publish(self, gaze, measurement, desktop, now, *, phone_present,
                 pointer_mode=False, mouse_control=False,
                 setup=False, running=True):
-        active = eligible_gaze(gaze, measurement, desktop, now,
-                               phone_present=phone_present,
-                               pointer_mode=pointer_mode,
-                               mouse_control=mouse_control,
-                               setup=setup, running=running)
-        if active:
-            packet = pack_packet(self._sequence + 1, gaze.captured, now,
-                                 gaze.x, gaze.y, desktop, gaze.radius, active=True)
-        else:
-            packet = pack_packet(self._sequence + 1, 0.0, now, active=False)
+        active, packet = gaze_packet(self._sequence + 1, gaze, measurement, desktop, now,
+                                     phone_present=phone_present, pointer_mode=pointer_mode,
+                                     mouse_control=mouse_control, setup=setup, running=running)
         return active, self._publish(packet)
 
     def publish_inactive(self, now=None):
         now = time.monotonic() if now is None else now
-        return self._publish(pack_packet(self._sequence + 1, 0.0, now, active=False), timeout=100)
+        packet = gaze_packet(self._sequence + 1, None, None, None, now, phone_present=False)[1]
+        return self._publish(packet, timeout=100)
 
     def close(self):
         """Revoke the last value, close handles, and release the writer lease."""

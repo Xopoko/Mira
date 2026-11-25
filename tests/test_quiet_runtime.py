@@ -15,8 +15,7 @@ from context_operator.core.contracts import Gaze, GazeMeasurement, Rect
 from context_operator.providers.game_gaze import (
     FLAG_ACTIVE,
     PACKET,
-    eligible_gaze,
-    pack_packet,
+    gaze_packet,
 )
 from context_operator.providers.learning import GazeLearning
 from context_operator.settings import DEFAULTS
@@ -54,24 +53,14 @@ class SyntheticClicks:
 
 
 class InMemoryGamePublisher:
-    """Exercise the real eligibility and packet encoder without Win32 mappings."""
+    """The publisher's own packet builder, kept in a list in place of the Win32 mapping."""
 
     def __init__(self):
         self.packets = []
         self.closed = False
 
     def publish(self, gaze, sample, desktop, now, **gates):
-        active = eligible_gaze(gaze, sample, desktop, now, **gates)
-        packet = pack_packet(
-            len(self.packets) + 1,
-            gaze.captured if gaze is not None else now,
-            now,
-            gaze.x if active else 0.0,
-            gaze.y if active else 0.0,
-            desktop if active else None,
-            gaze.radius if active else 0.0,
-            active=active,
-        )
+        active, packet = gaze_packet(len(self.packets) + 1, gaze, sample, desktop, now, **gates)
         self.packets.append(packet)
         return active, True
 
