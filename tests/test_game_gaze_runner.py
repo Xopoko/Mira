@@ -3,10 +3,10 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from context_operator.core.contracts import Gaze, GazeMeasurement, Rect
-from context_operator.game_gaze_session import GameGazeSession
-from context_operator.providers.learning import GazeLearning
+from context_operator.game_gaze_session import GameGazeSession, create_saved_session
 
 
 class FakePublisher:
@@ -64,7 +64,7 @@ class GameGazeSessionTests(unittest.TestCase):
                                   clock=lambda: now[0])
         return session, phone, publisher, events, now
 
-    def test_construction_is_inactive_and_click_start_tick_publish_fresh_real_gaze(self):
+    def test_session_waits_for_start_then_forwards_gaze_and_reports_publish_status(self):
         measurement = GazeMeasurement(20.0, (0.0,) * 22, (10.0, 20.0), True)
         gaze = Gaze(10.0, 20.0, 20.0, 30.0)
         session, phone, publisher, events, _ = self.make_session(
@@ -102,24 +102,32 @@ class GameGazeSessionTests(unittest.TestCase):
         self.assertEqual(events[-2:], ['publisher.close', 'phone.stop'])
         self.assertEqual(phone.polls, 1)
 
-    def test_bind_loads_saved_corrections_without_writing(self):
+    def test_create_saved_session_loads_saved_corrections_without_writing(self):
         with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / 'learning.json'
+            folder = Path(folder)
             key = 'profile-test'
+            path = folder / f'gaze-adaptation-personal-{key}.json'
+            settings = folder / 'settings.json'
+            settings.write_text('{"radius": 40}', encoding='utf-8')
+            anchor = {'features': [0.] * 22, 'offset': [5., 0.],
+                      'target': [10., 20.], 'count': 1, 'revision': 1}
             path.write_text(json.dumps({'version': 5, 'profile': key,
                                         'display': self.bounds.as_list(),
                                         'count': 1, 'click_accepted': 1,
-                                        'click_anchors': [{'features': [0.] * 22, 'offset': [5., 0.],
-                                                           'target': [10., 20.], 'count': 1, 'revision': 1}]}),
-                            encoding='utf-8')
-            before = path.read_bytes()
-            learning = GazeLearning(path)
-            learning.bind(key, self.bounds)
-            self.assertEqual(learning.count, 1)
-            self.assertEqual(learning.click_accepted, 1)
-            self.assertEqual(len(learning.click_anchors), 1)
-            self.assertEqual(path.read_bytes(), before)
-            self.assertEqual(list(Path(folder).iterdir()), [path])
+                                        'click_anchors': [anchor]}), encoding='utf-8')
+            before = {p.name: p.read_bytes() for p in folder.iterdir()}
+            profile = SimpleNamespace(arrays={'scale': [1.] * 22, 'training_x': [], 'training_y': []})
+            with patch('context_operator.settings.LOCAL', folder), \
+                 patch('context_operator.providers.gaze.LOCAL', folder), \
+                 patch('context_operator.personalization.ProfileStore') as store, \
+                 patch('context_operator.providers.windows.Windows') as windows:
+                store.return_value.load.return_value = profile, {'profile_key': key, 'report': {'p90_px': 120}}
+                windows.return_value.bounds.return_value = self.bounds
+                session = create_saved_session()
+            self.assertEqual(session.radius, 40)
+            self.assertEqual(session.learning.click_anchors, [anchor])
+            self.assertEqual(session.learning.click_accepted, 1)
+            self.assertEqual({p.name: p.read_bytes() for p in folder.iterdir()}, before)
 
 
 if __name__ == '__main__':

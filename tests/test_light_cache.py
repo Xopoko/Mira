@@ -1,14 +1,13 @@
 import os
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 import unittest
-from types import SimpleNamespace
 from unittest.mock import Mock,patch
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QPointF,QRectF,QRect
+from PySide6.QtCore import QPoint,QPointF,QRectF
 from PySide6.QtGui import QImage,QPainter,QPaintEvent
 from context_operator.ui.light_cache import LightCache
-from context_operator.ui.overlay import ink_region,paint_scene_light,FocusOverlay
-from context_operator.core.contracts import Rect,Element,WindowMap,Scene,Gaze
+from context_operator.ui.overlay import paint_scene_light,FocusOverlay
+from context_operator.core.contracts import Rect,Element,WindowMap,Scene,Gaze,Focus
 from context_operator.core.anticipation import Anticipation
 
 APP=QApplication.instance() or QApplication([])
@@ -45,13 +44,6 @@ class CacheTests(unittest.TestCase):
             for x in (35,41,42,89,400,900,901,907):
                 self.assertGreater(image.pixelColor(round(x*dpr),round(30*dpr)).alpha(),100)
             self.assertEqual(image.pixelColor(0,0).alpha(),0)
-    def test_damage_clears_old_light_and_separate_prediction_at_negative_origin(self):
-        prediction=Anticipation(Element('p','','Button',Rect(350,100,50,30)),10,10,1.)
-        old=ink_region(QPointF(-850,100),100,None,(-1000,0),.5)
-        new=ink_region(QPointF(-500,100),100,prediction,(-1000,0),.5)
-        dirty=old.united(new)
-        self.assertTrue(dirty.contains(QPointF(75,50).toPoint()));self.assertTrue(dirty.contains(QPointF(250,50).toPoint()))
-        self.assertTrue(dirty.contains(QPointF(685,55).toPoint()));self.assertFalse(dirty.contains(QPointF(450,250).toPoint()))
     def test_freshness_and_occlusion_are_checked_after_cached_geometry(self):
         bounds=Rect(-200,0,600,400);el=Element('a','','Button',Rect(-100,70,60,40),1,pid=1,captured=10)
         w=WindowMap(1,1,bounds,10,(el,),(bounds,));scene=Scene(1,10,bounds,(el,),1,windows=(w,))
@@ -63,22 +55,6 @@ class CacheTests(unittest.TestCase):
         from dataclasses import replace
         hidden=replace(scene,windows=(replace(w,visible=(Rect(0,0,400,400),)),),elements=())
         self.assertEqual(frame(10.2,hidden).pixelColor(120,70).alpha(),0)
-    def test_idle_prediction_expiry_clears_once_then_stops_repainting(self):
-        from PySide6.QtGui import QRegion
-        forecast=Anticipation(Element('p','','Button',Rect(100,100,60,30)),10,10,1.)
-        win=Mock();win.rect.return_value=Rect(0,0,1000,700)
-        state=SimpleNamespace(attention=None,center=None,previous=None,energy=0.,last_tick=10,prediction=forecast,
-                              highlight_mode='radial',scene=None,focus_target=None,selected_until=0.,
-                              ink=QRegion(),win=win,winId=lambda:1,devicePixelRatioF=lambda:1.,rect=lambda:QRect(0,0,1000,700),update=Mock())
-        with patch('context_operator.ui.overlay.time.monotonic',return_value=10.1):FocusOverlay.animate(state)
-        lit=state.update.call_args.args[0];self.assertFalse(lit.isEmpty())
-        state.update.reset_mock()
-        with patch('context_operator.ui.overlay.time.monotonic',return_value=10.3):FocusOverlay.animate(state)
-        self.assertEqual(state.update.call_args.args[0],lit);self.assertTrue(state.ink.isEmpty())
-        state.update.reset_mock()
-        with patch('context_operator.ui.overlay.time.monotonic',return_value=10.4):FocusOverlay.animate(state)
-        state.update.assert_not_called()
-
     def test_gaze_prediction_uses_its_own_expiry_and_exact_scene_identity(self):
         bounds=Rect(0,0,600,400);element=Element('a','A','Button',Rect(100,100,60,30),1,pid=5,captured=10)
         scene=Scene(1,10,bounds,(element,),1,window_rect=bounds)
@@ -93,27 +69,52 @@ class CacheTests(unittest.TestCase):
         changed=Scene(2,10,bounds,(replacement,),1,window_rect=bounds)
         self.assertEqual(frame(10.4,changed).pixelColor(130,98).alpha(),0)
 
-    def test_translucent_paint_erases_old_frames_on_motion_and_pause(self):
-        bounds=Rect(0,0,600,400);element=Element('a','','Button',Rect(70,70,60,40),1,pid=1,captured=10)
-        window=WindowMap(1,1,bounds,10,(element,),(bounds,))
-        scene=Scene(1,10,bounds,(element,),1,windows=(window,))
-        win=Mock();win.rect.return_value=bounds
-        state=SimpleNamespace(prediction=None,center=QPointF(100,100),attention=Gaze(100,100,10,80),
-            scene=scene,focus_target=None,selected_until=0.,highlight_mode='radial',energy=0.,born={},show_point=False,
-            win=win,winId=lambda:1,devicePixelRatioF=lambda:1.)
-        image=QImage(600,400,QImage.Format_ARGB32_Premultiplied);image.fill(0)
-        def paint():
-            p=QPainter(image)
-            with patch('context_operator.ui.overlay.QPainter',return_value=p) as constructor, \
-                 patch('context_operator.ui.overlay.time.monotonic',return_value=10.1):
-                constructor.CompositionMode_Source=QPainter.CompositionMode_Source
-                constructor.CompositionMode_SourceOver=QPainter.CompositionMode_SourceOver
-                constructor.Antialiasing=QPainter.Antialiasing
-                FocusOverlay.paintEvent(state,QPaintEvent(QRect(0,0,600,400)))
-            p.end()
-        paint();once=image.copy();paint();self.assertEqual(image,once)
-        state.center=QPointF(450,300);paint();self.assertEqual(image.pixelColor(100,70).alpha(),0)
-        state.center=QPointF(100,100);paint();self.assertGreater(image.pixelColor(100,70).alpha(),0)
-        state.center=state.attention=None;paint();self.assertEqual(image.pixelColor(100,70).alpha(),0)
+    def test_overlay_damage_erases_moved_light_and_expired_idle_prediction(self):
+        bounds=Rect(-1200,0,1200,800)
+        left=Element('a','A','Button',Rect(-1060,140,120,80),1,pid=1,captured=10)
+        right=Element('b','B','Button',Rect(-360,500,120,80),1,pid=1,captured=10)
+        predicted=Element('p','P','Button',Rect(-700,220,120,80),1,pid=1,captured=10)
+        elements=(left,right,predicted)
+        scene=Scene(1,10,bounds,elements,1,windows=(WindowMap(1,1,bounds,10,elements,(bounds,)),))
+        forecast=Anticipation(predicted,10,10,1.,'gaze')
+        win=Mock();win.rect.return_value=bounds;win.u.GetWindowLongW.return_value=0
+        overlay=FocusOverlay(APP.primaryScreen(),win)
+        self.addCleanup(overlay.close)
+        overlay.timer.stop();overlay.resize(600,400)
+        image=QImage(1200,800,QImage.Format_ARGB32_Premultiplied);image.setDevicePixelRatio(2.);image.fill(0)
+        with patch('context_operator.ui.overlay.time.monotonic',return_value=10.) as clock, \
+             patch.object(overlay,'devicePixelRatioF',return_value=2.),patch.object(overlay,'update') as update:
+            def frame(now):
+                clock.return_value=now
+                update.reset_mock();overlay.animate();update.assert_called_once()
+                dirty=update.call_args.args[0]
+                self.assertFalse(dirty.contains(QPoint(300,300)))
+                painter=QPainter(image);painter.setClipRegion(dirty)
+                try:
+                    with patch('context_operator.ui.overlay.QPainter',return_value=painter,
+                               CompositionMode_Source=QPainter.CompositionMode_Source,
+                               CompositionMode_SourceOver=QPainter.CompositionMode_SourceOver,
+                               Antialiasing=QPainter.Antialiasing):
+                        overlay.paintEvent(QPaintEvent(dirty))
+                finally:painter.end()
+
+            overlay.sync(Focus(),Gaze(*left.rect.center,10,100,'mouse'),scene,prediction=forecast)
+            frame(10.1)
+            self.assertGreater(image.pixelColor(200,140).alpha(),0)
+            self.assertGreater(image.pixelColor(560,214).alpha(),0)
+            once=image.copy();frame(10.1);self.assertEqual(image,once)
+            clock.return_value=10.2
+            overlay.sync(Focus(),Gaze(*right.rect.center,10.2,100,'mouse'),scene,prediction=forecast)
+            frame(10.2)
+            self.assertEqual(image.pixelColor(200,140).alpha(),0)
+            self.assertGreater(image.pixelColor(900,500).alpha(),0)
+            overlay.sync(Focus(),None,scene,prediction=forecast)
+            frame(10.25)
+            self.assertEqual(image.pixelColor(900,500).alpha(),0)
+            self.assertGreater(image.pixelColor(560,214).alpha(),0)
+            frame(10.33)
+            self.assertEqual(image.pixelColor(560,214).alpha(),0)
+            clock.return_value=10.4
+            update.reset_mock();overlay.animate();update.assert_not_called()
 
 if __name__=='__main__':unittest.main()

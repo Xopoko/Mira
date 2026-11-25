@@ -25,8 +25,15 @@ class LifecycleTests(unittest.TestCase):
         self.scene=Scene(2,time.monotonic(),Rect(0,0,1000,800),(self.el,),1,'Test scene',1,Rect(0,0,900,700))
         self.c.scene=self.scene;self.c.output=Mock()
     def tearDown(self):self.c.close()
-    def test_late_model_result_after_stop_does_not_act(self):
-        self.c.pause();self.c._decision(Intent('click',target_id='button'),self.scene,4,time.monotonic())
+    def test_late_model_result_after_restart_does_not_dispatch(self):
+        generation=self.c.generation;started=time.monotonic()
+        self.c.pause()
+        with patch('context_operator.controller.threading.Thread') as worker:
+            self.c.start()
+            self.c._scene(self.scene,self.c.generation,self.c.action_epoch)
+            worker.reset_mock()
+            self.c._decision(Intent('click',target_id='button'),self.scene,generation,started)
+            worker.assert_not_called()
         self.c.output.execute.assert_not_called()
     def test_personal_profile_binds_its_own_learning_store(self):
         self.c.learning=Mock(path=self.c.learning.path)
@@ -327,10 +334,13 @@ class LifecycleTests(unittest.TestCase):
         self.c.output.execute.assert_not_called()
         with patch('context_operator.controller.time.monotonic',return_value=now+1.5):self.c.tick()
         drain()
+        self.c.output.execute.assert_called_once()
         with patch('context_operator.controller.time.monotonic',return_value=now+1.6):self.c.tick()
-        self.c.scene=replace(self.scene,captured=now+1.7)
-        with patch('context_operator.controller.time.monotonic',return_value=now+1.7):self.c.tick()
+        with patch('context_operator.controller.time.monotonic',return_value=now+1.7):
+            self.c._scene(replace(self.scene,id=3,captured=now+1.7),self.c.generation,self.c.action_epoch)
+            self.c.tick()
         with patch('context_operator.controller.time.monotonic',return_value=now+2.5):self.c.tick()
+        drain()
         self.c.output.execute.assert_called_once()
 
 if __name__=='__main__':unittest.main()

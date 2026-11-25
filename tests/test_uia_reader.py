@@ -31,7 +31,7 @@ class ReaderTests(unittest.TestCase):
             CachedControlType=50000,CachedBoundingRectangle=SimpleNamespace(left=10,top=20,right=50,bottom=60),
             CachedName='Back',CachedAutomationId='back')
 
-    def test_password_guard_is_separate_from_public_property_cache(self):
+    def test_password_lookup_uses_a_separate_query_from_public_cache(self):
         reader,surface,root=self.fixture([self.button()])
         root.FindFirst.return_value=object()
         result=reader.scan(surface)
@@ -49,10 +49,15 @@ class ReaderTests(unittest.TestCase):
         self.assertFalse(result.blocked_capture)
 
     def test_incomplete_or_failed_cached_read_cannot_authorize_capture(self):
-        for controls,count in (([self.button()],4001),([RuntimeError('provider disconnected')],1)):
-            reader,surface,_=self.fixture(controls,count)
-            result=reader.scan(surface)
-            self.assertTrue(result.blocked_capture)
+        reader,surface,root=self.fixture([],4001)
+        read=root.FindAllBuildCache.return_value.GetElement
+        read.side_effect=None;read.return_value=self.button()
+        result=reader.scan(surface)
+        self.assertEqual(read.call_count,4000)
+        self.assertTrue(result.blocked_capture)
+
+        reader,surface,_=self.fixture([RuntimeError('provider disconnected')])
+        self.assertTrue(reader.scan(surface).blocked_capture)
 
     def test_reader_worker_is_mta_and_recovers_after_provider_error(self):
         attempts=[];apartments=[];created=[]
