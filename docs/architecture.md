@@ -91,6 +91,42 @@ first thirteen-point setup on that screen replays at 117 px, against 189 px
 for the plane alone. Published measurements of ARKit gaze report about 3°,
 which is roughly 190 px there.
 
+### The iris the iPhone measures itself
+
+Within one fixation the ARKit reading moves by 25–40 px on that screen, yet
+the fixation as a whole lands 100–200 px away. Averaging over time cannot
+remove that, so the iPhone companion also measures the eye on its own. In each
+camera frame it fits the edge of both irises in the brightness plane, next to
+where ARKit's eye centres project, and adds the result to its reply. The frame
+stays on the phone.
+
+```json
+"iris": {"image": [1440, 1080], "camera": [a, b, c, d, x0, y0],
+         "left": [x, y, radius, score], "right": [x, y, radius, score]}
+```
+
+`x`, `y` and `radius` are frame pixels, and an eye that was not found is
+`null`. `camera` maps camera space to the frame: a point `(X, Y, Z)` appears
+at `(x0, y0) + [[a, b], [c, d]] · (X, Y) / −Z`. The member is optional. A PC
+that does not know it ignores it, and a reply without it comes from an older
+phone.
+
+`personalization/iris.py` turns the reading into an eye direction. The ray
+through the iris pixel meets a sphere around the eye centre at the iris, and
+the line from the centre through that point is where the eye looks. The
+screen fit is the one above with this direction in place of ARKit's eye
+rotation. A phone below the screen sees the eyes from well below, where a
+centre a few millimetres off bends the whole mapping, so the fit also moves
+the centre the eye turns about away from the one ARKit tracks. Gaze setup
+stores the reading with every fixation, and
+`scripts/evaluate_gaze_setup.py` scores such a setup with both eye signals.
+
+This is an experiment, and tracking still uses ARKit's eye rotation. One
+degree of eye rotation moves the iris by about 0.18 mm, which at 60 cm is a
+fraction of a frame pixel, so the fit has to hold to a small part of a pixel
+to beat ARKit. Whether a phone on a desk reaches that is what recorded setups
+have to show.
+
 While tracking, an observation is supported when the head is within 20 cm of a
 head position seen in setup, 8 cm when the screen size was fitted, and turned
 about as far as it was there. Otherwise Mira shows no gaze point and reports

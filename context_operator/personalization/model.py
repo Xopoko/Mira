@@ -13,6 +13,20 @@ def _kernel(a, b, reach):
     return np.exp(-((a[:, None]-b[None])**2).sum(axis=2)/(2*reach**2))
 
 
+def leftover_field(landed, targets, reach):
+    """Weights of a smooth field through what the plane leaves over at each setup point."""
+    # Equal signal and noise: about half of a lone fixation's error is
+    # taken as real, the rest as that fixation's own scatter.
+    return np.linalg.solve(_kernel(landed, landed, reach)+np.eye(len(landed)), targets-landed)
+
+
+def add_field(pixels, landed, weights, reach):
+    """Move the predictions that hit the screen by the field around them."""
+    hit = np.isfinite(pixels).all(axis=1)
+    pixels[hit] += _kernel(pixels[hit], landed, reach)@weights
+    return pixels
+
+
 class StarterProfile:
     """Screen plane and eye correction fitted from the setup fixations.
 
@@ -91,9 +105,7 @@ class StarterProfile:
             f, display, screen['frame'], screen['center'], screen['pixel_m'],
             screen['eye_offsets'], screen['gains']), axis=0) for f in frames])
         reach = cls.CORRECTION_REACH*display[3]
-        # Equal signal and noise: about half of a lone fixation's error is
-        # taken as real, the rest as that fixation's own scatter.
-        correction = np.linalg.solve(_kernel(landed, landed, reach)+np.eye(len(landed)), y-landed)
+        correction = leftover_field(landed, y, reach)
         medians = np.asarray([np.median(f, axis=0) for f in frames])
         floors = np.full(22, .005)
         floors[4:7] = .02
@@ -115,11 +127,10 @@ class StarterProfile:
 
     def predict(self, features):
         x = np.asarray(features, dtype=float)
-        predicted = geometry.project(x, self.display, self.arrays['frame'], self.arrays['center'],
-                                     self.settings['pixel_m'], self.arrays['eye_offsets'], self.arrays['gains'])
-        hit = np.isfinite(predicted).all(axis=1)
-        predicted[hit] += _kernel(predicted[hit], self.arrays['landed'],
-                                  self.settings['correction_reach_px'])@self.arrays['correction']
+        predicted = add_field(
+            geometry.project(x, self.display, self.arrays['frame'], self.arrays['center'],
+                             self.settings['pixel_m'], self.arrays['eye_offsets'], self.arrays['gains']),
+            self.arrays['landed'], self.arrays['correction'], self.settings['correction_reach_px'])
         return predicted[0] if x.ndim == 1 else predicted
 
     def supports(self, features):

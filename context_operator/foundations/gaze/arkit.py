@@ -44,6 +44,7 @@ class ARObservation:
     blink: bool = False
     reason: str = 'TrueDepth can’t see your face'
     eye_origins: tuple = ()
+    iris: tuple = ()
 
 
 def matrix(value):
@@ -57,6 +58,27 @@ def matrix(value):
     if not np.allclose(r.T@r, np.eye(3), atol=.03) or not .97 < np.linalg.det(r) < 1.03:
         raise ValueError('Invalid eye rotation')
     return m
+
+
+IRIS_NUMBERS = 16
+
+
+def iris_reading(value):
+    """The phone's own iris measurement as 16 numbers, or () when it sent none.
+
+    Frame size, the six numbers that map camera space to frame pixels, then
+    centre, radius and score of the left and the right iris; a score of zero
+    means that eye was not found. The block is optional and experimental, so a
+    malformed one is dropped without failing the frame.
+    """
+    try:
+        eyes = [value.get(side) or [0.]*4 for side in ('left', 'right')]
+        numbers = np.asarray([*value['image'], *value['camera'], *eyes[0], *eyes[1]], dtype=float)
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return ()
+    if numbers.shape != (IRIS_NUMBERS,) or not np.isfinite(numbers).all() or np.any(numbers[:2] <= 0):
+        return ()
+    return tuple(numbers.tolist())
 
 
 class PacketDecoder:
@@ -103,6 +125,7 @@ class PacketDecoder:
             return result
         origins = [eye[:3,3] for eye in (left,right)]
         result.eye_origins = tuple(tuple(float(v) for v in origin) for origin in origins)
+        result.iris = iris_reading(packet.get('iris'))
         directions = [eye[:3,2] for eye in (left,right)]  # ARKit +Z points toward the pupil.
         if not .1 < -face[2,3] < 3. or any(direction[2] <= .1 for direction in directions):
             result.reason = 'Looking outside the tracking area'
@@ -132,6 +155,7 @@ class Sample:
     source_age_ms:float=0.
     read_wait_ms:float=0.
     eye_origins:tuple=()
+    iris:tuple=()
 
 
 class ARKitWorker(threading.Thread):
@@ -203,7 +227,7 @@ class ARKitWorker(threading.Thread):
                 sample = Sample(seq=observation.seq,captured=now-age,features=observation.features,
                     blink=observation.blink,reason=observation.reason,fps=fps,
                     source_age_ms=age*1000,read_wait_ms=round_trip*1000,
-                    eye_origins=observation.eye_origins)
+                    eye_origins=observation.eye_origins,iris=observation.iris)
                 with self.lock:
                     self.sample = sample
                 self.stop_event.wait(.005)
