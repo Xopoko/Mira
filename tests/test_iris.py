@@ -47,6 +47,21 @@ class IrisTests(unittest.TestCase):
             self.assertEqual(frame.iris, ())
             self.assertEqual(frame.features.shape, (22,))
 
+    def test_decoder_keeps_the_edge_profiles_only_when_they_are_complete(self):
+        decoder = PacketDecoder()
+        edge = np.tile(np.linspace(40., 180., 25), (4, 1)).tolist()
+        both = decoder.decode(dict(packet(1), iris=dict(measured(), profile={'step': .05, 'left': edge, 'right': edge})))
+        self.assertEqual(len(both.iris_profile), 201)
+        self.assertEqual(both.iris_profile[:2]+both.iris_profile[-1:], (.05, 40., 180.))
+        one = decoder.decode(dict(packet(2), iris=dict(measured(), profile={'step': .05, 'left': None, 'right': edge})))
+        self.assertEqual(one.iris_profile[1:101], (0.,)*100)
+        for seq, broken in enumerate(('yes', {'step': 0., 'left': edge, 'right': edge},
+                                      {'step': .05, 'left': edge[:3], 'right': edge}), 3):
+            frame = decoder.decode(dict(packet(seq), iris=dict(measured(), profile=broken)))
+            self.assertEqual(frame.iris_profile, ())
+            self.assertEqual(len(frame.iris), 16)
+        self.assertEqual(decoder.decode(dict(packet(6), iris={'profile': {'step': .05, 'left': edge, 'right': edge}})).iris_profile, ())
+
     def test_setup_lands_on_the_check_points_from_the_iris_whatever_the_eye_size(self):
         train, check = pixels(StarterSession.train_targets), pixels(StarterSession.check_targets)
         on_its_side = np.array([[0., -1, 0], [1, 0, 0], [0, 0, 1]])
@@ -76,7 +91,9 @@ class IrisTests(unittest.TestCase):
                     seq += 1
                     captured = stamp+1.+frame*.05
                     session.feed(SimpleNamespace(seq=seq, captured=captured, features=features[0], eye_origins=origins[0],
-                                                 iris=tuple(readings[0]) if with_iris else (), error='', blink=False),
+                                                 iris=tuple(readings[0]) if with_iris else (),
+                                                 iris_profile=(.05,)+(90.,)*200 if with_iris else (),
+                                                 error='', blink=False),
                                  captured+.005)
                     if session.ready_to_confirm and session.confirm(captured+.01):
                         stamp = captured+.5
@@ -90,6 +107,7 @@ class IrisTests(unittest.TestCase):
                 collect()
             session = StarterSession.resume(BOUNDS, archive, PIXEL_MM)
             self.assertEqual(np.shape(session.train[-1]['iris']), (12, 16))
+            self.assertEqual(np.shape(session.train[-1]['iris_profile']), (12, 201))
             session.begin_check(session.fit(), stamp)
             for _ in session.check_targets:
                 collect()

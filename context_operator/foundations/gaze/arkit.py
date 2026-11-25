@@ -45,6 +45,7 @@ class ARObservation:
     reason: str = 'TrueDepth can’t see your face'
     eye_origins: tuple = ()
     iris: tuple = ()
+    iris_profile: tuple = ()
 
 
 def matrix(value):
@@ -61,6 +62,8 @@ def matrix(value):
 
 
 IRIS_NUMBERS = 16
+IRIS_PROFILE_SHAPE = (4, 25)
+IRIS_PROFILE_NUMBERS = 1+2*4*25
 
 
 def iris_reading(value):
@@ -77,6 +80,26 @@ def iris_reading(value):
     except (AttributeError, KeyError, TypeError, ValueError):
         return ()
     if numbers.shape != (IRIS_NUMBERS,) or not np.isfinite(numbers).all() or np.any(numbers[:2] <= 0):
+        return ()
+    return tuple(numbers.tolist())
+
+
+def iris_profile(value):
+    """Brightness across the edge of each iris as 201 numbers, or () when the phone sent none.
+
+    The spacing of the samples as a fraction of the iris radius, then four
+    profiles of 25 samples for the left eye and four for the right: outwards
+    from the iris centre towards -x, +x, -y and +y of the face. Sample 12 lies
+    on the edge the phone fitted and lower ones inside the iris. A missing eye
+    is all zeros.
+    """
+    try:
+        profile = value['profile']
+        eyes = [profile.get(side) or np.zeros(IRIS_PROFILE_SHAPE) for side in ('left', 'right')]
+        numbers = np.r_[float(profile['step']), np.asarray(eyes, dtype=float).ravel()]
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return ()
+    if numbers.shape != (IRIS_PROFILE_NUMBERS,) or not np.isfinite(numbers).all() or numbers[0] <= 0:
         return ()
     return tuple(numbers.tolist())
 
@@ -126,6 +149,7 @@ class PacketDecoder:
         origins = [eye[:3,3] for eye in (left,right)]
         result.eye_origins = tuple(tuple(float(v) for v in origin) for origin in origins)
         result.iris = iris_reading(packet.get('iris'))
+        result.iris_profile = iris_profile(packet.get('iris')) if result.iris else ()
         directions = [eye[:3,2] for eye in (left,right)]  # ARKit +Z points toward the pupil.
         if not .1 < -face[2,3] < 3. or any(direction[2] <= .1 for direction in directions):
             result.reason = 'Looking outside the tracking area'
@@ -156,6 +180,7 @@ class Sample:
     read_wait_ms:float=0.
     eye_origins:tuple=()
     iris:tuple=()
+    iris_profile:tuple=()
 
 
 class ARKitWorker(threading.Thread):
@@ -227,7 +252,8 @@ class ARKitWorker(threading.Thread):
                 sample = Sample(seq=observation.seq,captured=now-age,features=observation.features,
                     blink=observation.blink,reason=observation.reason,fps=fps,
                     source_age_ms=age*1000,read_wait_ms=round_trip*1000,
-                    eye_origins=observation.eye_origins,iris=observation.iris)
+                    eye_origins=observation.eye_origins,iris=observation.iris,
+                    iris_profile=observation.iris_profile)
                 with self.lock:
                     self.sample = sample
                 self.stop_event.wait(.005)

@@ -8,6 +8,7 @@ import simd
 enum IrisReading {
     /// Half the visible width of an iris, in metres. It varies little between people.
     static let limbusRadius = 0.0059
+    static let limbusDistance = 0.0105
 
     static func measure(frame: ARFrame, face: ARFaceAnchor) -> [String: Any]? {
         let buffer = frame.capturedImage
@@ -44,22 +45,30 @@ enum IrisReading {
         let alongY = (pixel(camera * SIMD4(0, 0.1, -1, 1)) - shift) * 10
         let scale = (alongX.x*alongY.y - alongX.y*alongY.x).magnitude.squareRoot()
         let map = [alongX.x, alongY.x, alongX.y, alongY.y, shift.x, shift.y]
-        guard map.allSatisfy({ $0.isFinite }), scale > 1 else { return nil }
+        guard map.allSatisfy({ $0.isFinite }), scale.isFinite, scale > 1 else { return nil }
 
-        func eye(_ transform: simd_float4x4) -> Any {
-            let centre = (face * transform).columns.3
-            let depth = Double(-(simd_inverse(camera) * centre).z)
+        let worldToCamera = simd_inverse(camera)
+        func eye(_ transform: simd_float4x4) -> (fit: Any, profile: Any) {
+            let world = face * transform
+            let centre = world.columns.3
+            let depth = Double(-(worldToCamera * centre).z)
             let eyeball = pixel(centre)
             let across = pixel(centre + 0.01 * face.columns.0) - eyeball
             let up = pixel(centre + 0.01 * face.columns.1) - eyeball
-            guard depth > 0.05, simd_length(across) > 0, simd_length(up) > 0,
-                  let fit = IrisLocator.locate(in: image, eyeball: eyeball, expectedRadius: limbusRadius*scale/depth,
-                                               across: simd_normalize(across), up: simd_normalize(up)) else {
-                return NSNull()
+            let predicted = pixel(centre + Float(limbusDistance) * world.columns.2)
+            let radius = depth > 0.05 ? limbusRadius * scale / depth : .nan
+            guard let fit = IrisLocator.locate(in: image, eyeball: eyeball, expectedRadius: radius,
+                                               across: across, up: up, near: predicted) else {
+                return (NSNull(), NSNull())
             }
             let numbers = [fit.x, fit.y, fit.radius, fit.score]
-            return numbers.allSatisfy({ $0.isFinite }) ? numbers.map { ($0*1000).rounded()/1000 } : NSNull()
+            guard numbers.allSatisfy({ $0.isFinite }),
+                  fit.profiles.allSatisfy({ $0.allSatisfy { $0.isFinite } }) else { return (NSNull(), NSNull()) }
+            return (numbers.map { ($0 * 1000).rounded() / 1000 },
+                    fit.profiles.map { $0.map { ($0 * 10).rounded() / 10 } })
         }
-        return ["image": [image.width, image.height], "camera": map, "left": eye(eyes.0), "right": eye(eyes.1)]
+        let left = eye(eyes.0), right = eye(eyes.1)
+        return ["image": [image.width, image.height], "camera": map, "left": left.fit, "right": right.fit,
+                "profile": ["step": IrisLocator.step, "left": left.profile, "right": right.profile]]
     }
 }

@@ -14,12 +14,14 @@
   setup on that screen replays at 117 px. Earlier gaze setups need to be run
   again.
 - Measure the iris on the iPhone. The companion finds the edge of each iris
-  in its camera frame and sends where it is, as numbers, with every reading.
-  The frame stays on the phone. Gaze setup records these numbers with each
-  point, and `scripts/evaluate_gaze_setup.py` scores a recorded setup with
-  ARKit's eye rotation and with the measured iris side by side. This is an
-  experiment to find out whether Mira's own measurement beats ARKit's.
-  Tracking does not use it yet. The iPhone companion is at 0.4.1.
+  in its camera frame, in a small window around the place ARKit's eye
+  rotation predicts, and sends where it is with every reading, together with
+  the brightness across the edge on four sides, averaged along arcs. These
+  are numbers, and the frame stays on the phone. Gaze setup records them with
+  each point, and `scripts/evaluate_gaze_setup.py` scores a recorded setup
+  with ARKit's eye rotation and with the measured iris side by side. This is
+  an experiment to find out whether Mira's own measurement beats ARKit's.
+  Tracking does not use it yet. The iPhone companion is at 0.4.2.
 - Redesign the Windows app as a dark companion app. **Overview** now leads
   with a live preview of your screen beside the iPhone, accuracy and quick
   settings. **Profile** is now **Calibration**, the highlight settings moved

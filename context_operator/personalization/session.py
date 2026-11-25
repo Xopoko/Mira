@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ..foundations.gaze.arkit import ENGINE_VERSION, IRIS_NUMBERS
+from ..foundations.gaze.arkit import ENGINE_VERSION, IRIS_NUMBERS, IRIS_PROFILE_NUMBERS
 
 
 STARTER_PROTOCOL = 'personal-arkit-starter-v2'
@@ -17,6 +17,8 @@ MIN_FRAMES = 12
 MIN_DURATION = .65
 SETTLE_SECONDS = .85
 DISTANCE_TOLERANCE_M = .07
+# What the phone measured on the iris itself, kept with a fixation when every frame has it.
+IRIS_RECORDS = (('iris', IRIS_NUMBERS), ('iris_profile', IRIS_PROFILE_NUMBERS))
 
 
 def _bounds(bounds):
@@ -123,12 +125,13 @@ class StarterSession:
             kept = [{key: record[key] for key in ('phase', 'index', 'target', 'features', 'eye_origins')}
                     for record in records]
             for record, saved in zip(records, kept):
-                try:
-                    iris = np.asarray(record.get('iris'), dtype=float)
-                except (TypeError, ValueError):
-                    continue
-                if iris.shape == (len(saved['features']), IRIS_NUMBERS) and np.isfinite(iris).all():
-                    saved['iris'] = record['iris']
+                for key, size in IRIS_RECORDS:
+                    try:
+                        numbers = np.asarray(record.get(key), dtype=float)
+                    except (TypeError, ValueError):
+                        continue
+                    if numbers.shape == (len(saved['features']), size) and np.isfinite(numbers).all():
+                        saved[key] = record[key]
             setattr(session, phase, kept)
         if session.check and len(session.train) != len(session.train_targets):
             raise ValueError('Check data without complete training')
@@ -272,9 +275,10 @@ class StarterSession:
                   'eye_origins': [np.asarray(s.eye_origins, dtype=float).tolist() for s in frames]}
         # The phone's own iris measurement rides along when every frame has one,
         # so the two eye signals can be compared on the same fixations.
-        iris = [getattr(s, 'iris', ()) for s in frames]
-        if all(len(reading) == IRIS_NUMBERS for reading in iris):
-            record['iris'] = [list(reading) for reading in iris]
+        for key, size in IRIS_RECORDS:
+            readings = [getattr(s, key, ()) for s in frames]
+            if all(len(reading) == size for reading in readings):
+                record[key] = [list(reading) for reading in readings]
         self.hold_reason = ''
         records = self.check if self.phase == 'check' else self.train
         old_state = self.phase, self.index

@@ -1,490 +1,394 @@
 import Foundation
 import simd
 
-/// Borrowed 8-bit luma. The top-left corner is (0, 0), and pixel centres are at half-integer coordinates.
+/// Borrowed 8-bit luma. Pixel centres in frame coordinates lie at half-integers.
 struct LumaImage {
     let base: UnsafePointer<UInt8>
     let width: Int
     let height: Int
     let bytesPerRow: Int
+
+    @inline(__always)
+    fileprivate func sample(_ p: SIMD2<Double>) -> Double {
+        let x = Int(p.x), y = Int(p.y)
+        let fx = p.x - Double(x), fy = p.y - Double(y)
+        let row = base + y * bytesPerRow + x
+        let a = Double(row[0]), b = Double(row[1])
+        let c = Double(row[bytesPerRow]), d = Double(row[bytesPerRow + 1])
+        let top = a + fx * (b - a), bottom = c + fx * (d - c)
+        return top + fy * (bottom - top)
+    }
+
+    fileprivate func contains(_ p: SIMD2<Double>) -> Bool {
+        p.x >= 0 && p.y >= 0 && p.x < Double(width - 1) && p.y < Double(height - 1)
+    }
 }
 
 struct IrisFit: Equatable {
-    // Centre and longer semi-axis are in image pixels.
+    // Centre and longer semi-axis are in frame pixels.
     var x: Double
     var y: Double
     var radius: Double
-    // Weighted edge support in 0...1.
     var score: Double
+    var profiles: [[Double]]
 }
 
 enum IrisLocator {
+    static let sectors = 4
+    static let samples = 25
+    static let step = 0.05
+
     private typealias Point = SIMD2<Double>
-
-    private struct Ray {
-        let direction: Point
-        let weight: Double
+    private static let rotations = (-5...5).map { index in
+        let angle = Double(index) * (.pi * 7 / 180)
+        return Point(cos(angle), sin(angle))
     }
 
-    private struct Edge {
-        let offset: Point
-        let weight: Double
-    }
-
-    private struct Seed {
-        let center: Point
-        let radius: Double
-        let score: Double
-    }
-
-    private struct Contrast {
-        let high: Double
-        let span: Double
-        let noise: Double
-        let brightTilt: Double
-
-        var scale: Double { 1 / span }
-        var floor: Double { max(0.045 * span, 1.5 * noise) }
-        var highlight: Double { high + max(0.055 * span, 2.1 * noise) }
-    }
-
-    private static let angles = (0...16).map { i -> Ray in
-        let angle = Double(i - 8) * (Double.pi * 7 / 180)
-        let weight = max(0.30, 1 - (angle >= 0 ? 1.05 : 0.62) * angle * angle)
-        return Ray(direction: Point(cos(angle), sin(angle)), weight: weight)
-    }
-
-    private static let radiusFactors = SIMD4(0.88, 0.96, 1.05, 1.13)
-    private static let arcWeight = 2 * angles.reduce(0.0) { $0 + $1.weight }
-
-    /// Ellipse metric I + k ddᵀ, with the minor axis parallel to the displacement d.
+    /// The projected circle on a sphere, with its minor axis along the
+    /// displacement from the eyeball. The axis ratio has a floor of 0.6.
     private struct Shape {
         let displacement: Point
         let k: Double
-        let halfDerivative: Double
 
-        init(_ displacement: Point, _ depthSquared: Double) {
+        init(_ displacement: Point, depthSquared: Double) {
             self.displacement = displacement
             let distanceSquared = simd_length_squared(displacement)
-            if depthSquared - distanceSquared >= 0.36 * depthSquared {
-                k = 1 / (depthSquared - distanceSquared)
-                halfDerivative = k * k
-            } else {
-                k = (16.0 / 9) / distanceSquared
-                halfDerivative = -k / distanceSquared
-            }
+            k = 1 / max(depthSquared - distanceSquared, (9.0 / 16) * distanceSquared)
         }
 
+        @inline(__always)
         func scale(_ direction: Point) -> Double {
             let projection = simd_dot(displacement, direction)
             return 1 / sqrt(1 + k * projection * projection)
         }
 
-        func normal(at offset: Point) -> Point {
-            simd_normalize(offset + (k * simd_dot(offset, displacement)) * displacement)
-        }
-
-        func residual(at offset: Point, radius: Double) -> (Double, SIMD3<Double>) {
-            let projection = simd_dot(offset, displacement)
-            let length = sqrt(simd_length_squared(offset) + k * projection * projection)
-            let gradient = (-offset + (k * projection) * (offset - displacement)
-                            + (halfDerivative * projection * projection) * displacement) / length
-            return (length - radius, SIMD3(gradient.x, gradient.y, -1))
+        func slope(along direction: Point, toward tangent: Point) -> Double {
+            let projection = simd_dot(displacement, direction)
+            return k * projection * simd_dot(displacement, tangent) / (1 + k * projection * projection)
         }
     }
 
-    private struct Crop {
-        let pixels: UnsafeBufferPointer<UInt8>
-        let stride: Int
-        let height: Int
-        let source: UnsafePointer<UInt8>
-        let sourceStride: Int
+    private struct Fit {
+        var center: Point
+        var radius: Double
+    }
 
-        @inline(__always)
-        func nearest(_ p: Point) -> Double {
-            Double(pixels[Int(p.y + 0.5) * stride + Int(p.x + 0.5)])
-        }
+    private struct Edge {
+        let offset: Double
+        let strength: Double
+    }
 
-        @inline(__always)
-        func raw(_ p: Point) -> Double {
-            Double(source[Int(p.y + 0.5) * sourceStride + Int(p.x + 0.5)])
-        }
-
-        @inline(__always)
-        func rawClamped(_ p: Point) -> Double {
-            raw(Point(min(Double(stride - 1), max(0, p.x)), min(Double(height - 1), max(0, p.y))))
-        }
-
-        @inline(__always)
-        func sample(_ p: Point) -> Double {
-            let x = Int(p.x), y = Int(p.y)
-            let fx = p.x - Double(x), fy = p.y - Double(y)
-            let i = y * stride + x
-            let a = Double(pixels[i]), b = Double(pixels[i + 1])
-            let c = Double(pixels[i + stride]), d = Double(pixels[i + stride + 1])
-            let top = a + fx * (b - a), bottom = c + fx * (d - c)
-            return top + fy * (bottom - top)
-        }
+    private struct Photometry {
+        let dark: Double
+        let span: Double
+        let noise: Double
     }
 
     private struct Search {
-        let crop: Crop
+        let image: LumaImage
         let eye: Point
+        let prediction: Point
         let across: Point
         let up: Point
         let radius: Double
         let extent: Double
+        let rays: [Point]
+        let needsBoundsCheck: Bool
 
         var depthSquared: Double { 3.24 * radius * radius }
-        var minRadius: Double { 0.86 * radius }
-        var maxRadius: Double { 1.16 * radius }
+        var minRadius: Double { 0.88 * radius }
+        var maxRadius: Double { 1.12 * radius }
 
         func locate() -> IrisFit? {
-            guard let contrast = contrast() else { return nil }
-            let (seed, backup, lower, upper) = coarseFit(contrast)
-            guard seed.score > 0.35 else { return nil }
-            return withUnsafeTemporaryAllocation(of: Edge.self, capacity: 2 * IrisLocator.angles.count) { edges in
-                edges.initialize(repeating: Edge(offset: .zero, weight: 0))
-                var fit = refine(seed, contrast, into: edges)
-                if (fit?.score ?? 0) < 0.50 || abs((fit?.radius ?? radius) - radius) > 0.09 * radius,
-                   backup.score > 0.35,
-                   simd_length(seed.center - backup.center) + abs(seed.radius - backup.radius) > 0.5,
-                   let second = refine(backup, contrast, into: edges), second.score > (fit?.score ?? 0) {
-                    fit = second
-                }
-                // A weak fit can follow the lid into another row of the wider search window.
-                if (fit?.score ?? 0) < 0.54 {
-                    for alternate in [lower, upper] where alternate.score > 0.68 * seed.score {
-                        if let next = refine(alternate, contrast, into: edges),
-                           next.score > (fit?.score ?? 0) + 0.025 {
-                            fit = next
-                        }
-                    }
-                }
-                return (fit?.score ?? 0) >= 0.30 ? fit : nil
+            let light = photometry()
+            guard var fit = coarse(light) else { return nil }
+            for _ in 0..<3 {
+                guard let profiles = profiles(at: fit) else { return nil }
+                fit = recenter(fit, profiles: profiles)
             }
+            guard let profiles = profiles(at: fit) else { return nil }
+            return IrisFit(x: fit.center.x + 0.5, y: fit.center.y + 0.5, radius: fit.radius,
+                           score: score(profiles, noise: light.noise), profiles: profiles)
         }
 
-        private func refine(_ seed: Seed, _ contrast: Contrast,
-                            into edges: UnsafeMutableBufferPointer<Edge>) -> IrisFit? {
-            var center = seed.center
-            var fittedRadius = seed.radius
-            var score = 0.0
-            for pass in 0..<4 {
-                let count = trace(center: center, radius: fittedRadius, contrast: contrast,
-                                  reach: pass == 0 ? max(3.0, 0.15 * radius) : 2.2, into: edges)
-                let observations = UnsafeBufferPointer(start: edges.baseAddress, count: count)
-                guard count >= 6 else { return nil }
-                let startingCenter = center
-                for iteration in 0..<3 {
-                    let cutoff = pass == 0 && iteration == 0 ? 3.3 : (pass < 2 ? 1.45 : 0.90)
-                    guard let step = correction(center: center, radius: fittedRadius, origin: startingCenter,
-                                                edges: observations, cutoff: cutoff) else { break }
-                    let delta = center + Point(step.x, step.y) - eye
-                    center = eye + across * min(extent, max(-extent, simd_dot(delta, across)))
-                        + up * min(extent, max(-extent, simd_dot(delta, up)))
-                    fittedRadius = min(maxRadius, max(minRadius, fittedRadius + step.z))
-                }
-                if pass == 3 {
-                    score = support(center: center, radius: fittedRadius, origin: startingCenter, edges: observations)
-                }
-            }
-            return IrisFit(x: center.x, y: center.y, radius: fittedRadius, score: score)
-        }
-
-        private func contrast() -> Contrast? {
-            withUnsafeTemporaryAllocation(of: Int.self, capacity: 1024) { bins in
-                bins.initialize(repeating: 0)
-                for row in -6...6 {
-                    let start = eye + up * (Double(row) * 0.20 * radius)
-                    for column in -11...11 {
-                        let point = start + across * (Double(column) * 0.18 * radius)
-                        let raw = crop.raw(point)
-                        let luma = Int(crop.nearest(point))
-                        bins[luma] += 1
-                        if column != 0 {
-                            bins[(column < 0 ? 512 : 768) + luma] += 1
-                        }
-                        bins[256 + Int(abs(raw - crop.raw(point + Point(1, 0))))] += 1
-                        bins[256 + Int(abs(raw - crop.raw(point + Point(0, 1))))] += 1
-                    }
-                }
-                func quantile(_ from: Int, _ rank: Int) -> Double {
-                    var total = 0
-                    for value in 0...255 {
-                        total += bins[from + value]
-                        if total >= rank { return Double(value) }
-                    }
-                    return 0
-                }
-                let low = quantile(0, 30)
-                let high = quantile(0, 276)
-                let span = high - low
-                // The median adjacent difference estimates sensor noise without counting isolated edges.
-                let noise = quantile(256, 299) / 0.954
-                guard span > 4.0 * noise else { return nil }
-                let midDifference = quantile(768, 100) - quantile(512, 100)
-                let highDifference = quantile(768, 132) - quantile(512, 132)
-                // Shift the bright reference only if a broad range of tones tilts the same way.
-                let tilt = midDifference * highDifference > 0
-                    ? min(abs(midDifference), abs(highDifference), 0.30 * span) * (highDifference > 0 ? 0.5 : -0.5) : 0
-                return Contrast(high: high, span: span, noise: noise, brightTilt: tilt)
-            }
-        }
-
-        private func coarseFit(_ contrast: Contrast) -> (Seed, Seed, Seed, Seed) {
-            let step = max(1.45, 0.15 * radius)
-            let n = Int(ceil(extent / step))
-            return withUnsafeTemporaryAllocation(of: Seed.self, capacity: 2 * n + 1) { rows in
-                coarseFit(contrast, gridRadius: n, rows: rows)
-            }
-        }
-
-        private func coarseFit(_ contrast: Contrast, gridRadius n: Int,
-                               rows: UnsafeMutableBufferPointer<Seed>) -> (Seed, Seed, Seed, Seed) {
-            let baseline = max(1.6, 0.10 * radius)
-            let scale = contrast.scale, floor = contrast.floor, bright = contrast.highlight
-            let empty = Seed(center: eye, radius: radius, score: 0)
-            var best = empty, nominal = empty
-            var bestRow = 0
+        private func coarse(_ light: Photometry) -> Fit? {
+            // About one pixel at camera scale. Larger irises also have wider
+            // contrast flanks, so sample their window at a coarser resolution.
+            let n = min(13, Int(ceil(extent)))
             let spacing = extent / Double(n)
-            for j in -n...n {
-                let vertical = up * (Double(j) * spacing)
-                var row = empty
-                for i in -n...n {
-                    let delta = across * (Double(i) * spacing) + vertical
-                    let center = eye + delta
-                    let shape = Shape(delta, depthSquared)
-                    var sums = SIMD4<Double>.zero
-                    for index in stride(from: 0, to: IrisLocator.angles.count, by: 3) {
-                        let ray = IrisLocator.angles[index]
-                        for side in [-1.0, 1.0] {
-                            let direction = across * (side * ray.direction.x) + up * ray.direction.y
-                            let distance = radius * shape.scale(direction)
-                            let normal = shape.normal(at: direction)
-                            let tangent = baseline * Point(-normal.y, normal.x)
-                            let radii = IrisLocator.radiusFactors * distance
-                            let inner = radii - baseline
-                            let outer = radii + baseline
-                            for r in 0..<4 {
-                                let inside = crop.nearest(center + direction * inner[r])
-                                let outside = crop.nearest(center + direction * outer[r])
-                                let strength = min(0.8, max(0, (outside - inside - floor) * scale))
-                                guard strength > 0 else { continue }
-                                let excess = max(0, (outside - bright) * scale)
-                                let edge = center + direction * radii[r]
-                                let tangential = abs(crop.nearest(edge + tangent) - crop.nearest(edge - tangent)) * scale
-                                let merit = max(0, strength - 0.75 * tangential)
-                                sums[r] += ray.weight * merit / (1 + 6 * excess)
-                            }
+            let flank = max(1.65, 0.17 * radius)
+            let radii = SIMD4(minRadius, 0.96 * radius, 1.04 * radius, maxRadius)
+            let cap = SIMD4(repeating: 0.8 * light.span)
+            let dark = SIMD4(repeating: light.dark)
+            let one = SIMD4<Double>(repeating: 1)
+            let inverseSpan = 1 / light.span
+            var best = Fit(center: prediction, radius: radius)
+            var bestMerit = 0.0
+            for row in -n...n {
+                let start = prediction + up * (Double(row) * spacing)
+                for column in -n...n {
+                    let center = start + across * (Double(column) * spacing)
+                    let shape = Shape(center - eye, depthSquared: depthSquared)
+                    var left = SIMD4<Double>.zero
+                    var right = SIMD4<Double>.zero
+                    var lower = SIMD4<Double>.zero
+                    for sector in 0..<3 {
+                        var support = SIMD4<Double>.zero
+                        for index in stride(from: 1, through: 9, by: 2) {
+                            let direction = rays[11 * sector + index]
+                            let distances = radii * shape.scale(direction)
+                            let a = center - flank * direction
+                            let b = center + flank * direction
+                            if needsBoundsCheck, !image.contains(a + distances.x * direction)
+                                || !image.contains(b + distances.w * direction) { return nil }
+                            let first = distances.x * direction, second = distances.y * direction
+                            let third = distances.z * direction, fourth = distances.w * direction
+                            let inside = SIMD4(image.sample(a + first), image.sample(a + second),
+                                               image.sample(a + third), image.sample(a + fourth))
+                            let outside = SIMD4(image.sample(b + first), image.sample(b + second),
+                                                image.sample(b + third), image.sample(b + fourth))
+                            let relative = (outside - dark) * (2 * inverseSpan)
+                            let bright = simd_clamp(relative - one, .zero, one)
+                            let difference = simd_clamp(outside - inside, -0.4 * cap, cap)
+                            support += bright * difference
+                        }
+                        switch sector {
+                        case 0: left = support
+                        case 1: right = support
+                        default: lower = support
                         }
                     }
                     for r in 0..<4 {
-                        let factor = IrisLocator.radiusFactors[r]
-                        let score = sums[r] * (1 - 8 * (factor - 1) * (factor - 1))
-                        if score > row.score { row = Seed(center: center, radius: radius * factor, score: score) }
-                        if (r == 1 || r == 2) && score > nominal.score {
-                            nominal = Seed(center: center, radius: radius * factor, score: score)
+                        // Give the weaker side less influence when a corner
+                        // leaves only one lateral arc visible.
+                        let merit = max(left[r], right[r]) + 0.50 * min(left[r], right[r]) + 0.55 * lower[r]
+                        if merit > bestMerit {
+                            best = Fit(center: center, radius: radii[r])
+                            bestMerit = merit
                         }
                     }
                 }
-                rows.initializeElement(at: j + n, to: row)
-                if row.score > best.score {
-                    best = row
-                    bestRow = j + n
-                }
             }
-            var lower = empty, upper = empty
-            for j in rows.indices {
-                if j < bestRow, rows[j].score > lower.score { lower = rows[j] }
-                if j > bestRow, rows[j].score > upper.score { upper = rows[j] }
-            }
-            return (best, nominal, lower, upper)
+            return best
         }
 
-        private func trace(center: Point, radius: Double, contrast: Contrast, reach: Double,
-                           into edges: UnsafeMutableBufferPointer<Edge>) -> Int {
-            let shape = Shape(center - eye, depthSquared)
-            let spacing = 0.55
-            let flank = max(2.0, min(3.0, radius * 0.16))
-            let count = Int(ceil(reach / spacing))
-            let scale = contrast.scale, threshold = contrast.floor, bright = contrast.highlight
-            let glintReach = 0.43 * radius + 1.3
-            var written = 0
-            for ray in IrisLocator.angles {
-                for side in [-1.0, 1.0] {
-                    let direction = across * (side * ray.direction.x) + up * ray.direction.y
-                    let distance = radius * shape.scale(direction)
-                    let normal = shape.normal(at: direction)
-                    let tangent = Point(-normal.y, normal.x)
-                    let obliquity = simd_dot(direction, tangent)
-                    let radialToNormal = 1 / simd_dot(direction, normal)
-                    let predicted = center + distance * direction
-                    let stride = direction * spacing
-                    let start = predicted - Double(count + 2) * stride
-                    var lower = crop.sample(start + stride)
-                    var middle = crop.sample(start + 2 * stride)
-                    var left = middle - crop.sample(start)
-                    var peak = 0.0
-                    var position = 0.0
-                    var edgeWeight = 0.0
-                    var previous = 0.0
-                    for index in -count...(count + 1) {
-                        let upper = crop.sample(predicted + Double(index + 1) * stride)
-                        let right = upper - lower
-                        if index > -count, left > threshold, left >= right, left >= previous {
-                            let curve = previous + right - 2 * left
-                            let fraction = curve < 0 ? 0.5 * (previous - right) / curve : 0
-                            let candidate = (Double(index - 1) + fraction) * spacing
-                            let point = predicted + candidate * direction
-                            let inside = crop.sample(point - flank * direction)
-                            let outside = crop.sample(point + flank * direction)
-                            let strength = min(1, max(0, (outside - inside - threshold) * scale))
-                            let tangential = 0.5 * (crop.sample(point + tangent) - crop.sample(point - tangent))
-                            let normalGradient = (left / (2 * spacing) - obliquity * tangential) * radialToNormal
-                            let alignment = max(0, 1 - 1.5 * abs(tangential) / max(threshold, normalGradient))
-                            let horizontal = simd_dot(point - eye, across) / self.radius
-                            let localBright = bright + contrast.brightTilt * min(1, max(-1, horizontal))
-                            let glare = glint(at: point, outward: direction, tangent: tangent, flank: flank,
-                                              reach: glintReach, scale: scale, bright: localBright)
-                            let weight = alignment * alignment * glare / (1 + 0.045 * candidate * candidate)
-                            let merit = strength * strength * weight
-                            if merit > peak {
-                                position = candidate
-                                peak = merit
-                                edgeWeight = alignment * glare * min(1, strength / 0.47)
+        private func photometry() -> Photometry {
+            // Use percentiles for the local luma range and the median adjacent
+            // difference for the noise floor. Both resist isolated glints.
+            withUnsafeTemporaryAllocation(of: Int.self, capacity: 512) { bins in
+                bins.initialize(repeating: 0)
+                var levels = 0, differences = 0
+                for row in -5...5 {
+                    for column in -5...5 {
+                        let p = prediction + (0.3 * radius) * (Double(column) * across + Double(row) * up)
+                        if !needsBoundsCheck || image.contains(p) {
+                            let level = image.sample(p)
+                            bins[Int(level)] += 1
+                            levels += 1
+                            let adjacent = p + Point(1, 0)
+                            if !needsBoundsCheck || image.contains(adjacent) {
+                                bins[256 + Int(abs(image.sample(adjacent) - level))] += 1
+                                differences += 1
                             }
                         }
-                        previous = left
-                        left = right
-                        lower = middle
-                        middle = upper
                     }
-                    guard distance + position > 0 else { continue }
-                    let weight = ray.weight * edgeWeight
-                    if weight > 0.07 {
-                        edges[written] = Edge(offset: (distance + position) * direction, weight: weight)
-                        written += 1
+                }
+                func percentile(start: Int, rank: Int) -> Double {
+                    var cumulative = 0
+                    for value in 0..<256 {
+                        cumulative += bins[start + value]
+                        if cumulative >= rank { return Double(value) }
+                    }
+                    return 0
+                }
+                let dark = percentile(start: 0, rank: (levels + 9) / 10)
+                let bright = percentile(start: 0, rank: (9 * levels + 9) / 10)
+                let noise = percentile(start: 256, rank: (differences + 1) / 2)
+                return Photometry(dark: dark, span: max(1, bright - dark), noise: noise)
+            }
+        }
+
+        private func profiles(at fit: Fit) -> [[Double]]? {
+            let shape = Shape(fit.center - eye, depthSquared: depthSquared)
+            let spacing = step * fit.radius
+            let reach = 12 * spacing
+            var result = [[Double]]()
+            result.reserveCapacity(sectors)
+            for sector in 0..<sectors {
+                var profile = [Double]()
+                profile.reserveCapacity(samples)
+                let offsets = (0..<11).map { index in
+                    fit.center + (fit.radius * shape.scale(rays[sector * 11 + index])) * rays[sector * 11 + index]
+                }
+                if needsBoundsCheck {
+                    for index in 0..<11 {
+                        let delta = reach * rays[sector * 11 + index]
+                        if !image.contains(offsets[index] - delta) || !image.contains(offsets[index] + delta) {
+                            return nil
+                        }
+                    }
+                }
+                for j in 0..<samples {
+                    let offset = Double(j - 12) * spacing
+                    var sum = 0.0
+                    var low = Double.infinity, secondLow = Double.infinity
+                    var high = -Double.infinity, secondHigh = -Double.infinity
+                    for index in 0..<11 {
+                        let value = image.sample(offsets[index] + offset * rays[sector * 11 + index])
+                        sum += value
+                        secondLow = min(secondLow, max(low, value))
+                        secondHigh = max(secondHigh, min(high, value))
+                        low = min(low, value)
+                        high = max(high, value)
+                    }
+                    profile.append((sum - low - secondLow - high - secondHigh) / 7)
+                }
+                result.append(profile)
+            }
+            return result
+        }
+
+        private func edges(in p: [Double], spacing: Double) -> [Edge] {
+            // The difference of two two-sample averages is a lightly smoothed derivative.
+            func rise(_ i: Int) -> Double {
+                (p[i + 2] + p[i + 1] - p[i - 1] - p[i - 2]) * 0.5
+            }
+            var result = [Edge]()
+            for i in 6...18 {
+                let left = rise(i - 1), peak = rise(i), right = rise(i + 1)
+                guard peak > 0, peak >= left, peak > right else { continue }
+                let outside = (p[i + 5] + p[i + 4]) * 0.5
+                let inside = (p[i - 5] + p[i - 4]) * 0.5
+                let contrast = (outside - inside) / max(1, outside + inside)
+                guard contrast > 0.045 else { continue }
+                let fraction = 0.5 * (left - right) / (left + right - 2 * peak)
+                result.append(Edge(offset: (Double(i - 12) + fraction) * spacing, strength: contrast))
+            }
+            return result
+        }
+
+        private func lowerOffset(_ edge: Edge, profiles: [[Double]], spacing: Double) -> Double {
+            let p = profiles[2]
+            let peak = 12 + Int((edge.offset / spacing).rounded())
+            let crest = p[(peak + 1)...min(24, peak + 8)].max()!
+            // A dark lid just outside the lower limbus pulls the derivative
+            // peak inwards. Estimate the opposing step from the outer flank.
+            let sclera = 0.5 * (profiles[0][14...23].max()! + profiles[1][14...23].max()!)
+            let inside = p[max(0, peak - 7)...(peak - 3)].min()!
+            let contrast = sclera - inside
+            guard contrast > 0, crest > inside else { return edge.offset }
+            let difference = sclera - (p[22] + p[23] + p[24]) / 3
+            let drop = min(contrast, max(-contrast, difference))
+            guard drop > 0 || -drop > 0.15 * contrast else { return edge.offset }
+            let slope = (p[peak + 1] - p[peak - 1]) / (2 * spacing)
+            guard slope > 0 else { return edge.offset }
+            let blur = min(2.5, contrast / (sqrt(2 * .pi) * slope))
+            let fall = ((peak + 2)...23).min { p[$0 + 1] - p[$0 - 1] < p[$1 + 1] - p[$1 - 1] }!
+            let separation = Double(fall - peak) * spacing
+            let distance = max(0.6 * blur, max(0, separation * separation - 3 * blur * blur).squareRoot())
+            let z = distance / blur
+            // First-order shift of the peak for two Gaussian-blurred steps.
+            return edge.offset + drop / contrast * distance * exp(-0.5 * z * z)
+        }
+
+        private func recenter(_ fit: Fit, profiles: [[Double]]) -> Fit {
+            let spacing = step * fit.radius
+            let left = edges(in: profiles[0], spacing: spacing)
+            let right = edges(in: profiles[1], spacing: spacing)
+            let lower = edges(in: profiles[2], spacing: spacing)
+            let upper = edges(in: profiles[3], spacing: spacing)
+            let shape = Shape(fit.center - eye, depthSquared: depthSquared)
+            let acrossScale = shape.scale(across)
+            var x = 0.0, y = 0.0
+            var newRadius = fit.radius
+            var bestPair = 0.0
+            let horizontalPosition = simd_dot(fit.center - eye, across)
+            let outward = horizontalPosition < 0 ? 0 : 1
+            let weakOuter = abs(horizontalPosition) > 0.65 * radius
+                && profiles[outward][15...22].max()! < 0.82 * profiles[1 - outward][15...22].max()!
+            let bestLeft = weakOuter && outward == 0 ? nil : left.max { $0.strength < $1.strength }
+            let bestRight = weakOuter && outward == 1 ? nil : right.max { $0.strength < $1.strength }
+            for a in left {
+                for b in right where !weakOuter {
+                    let r = fit.radius + 0.5 * (a.offset + b.offset) / acrossScale
+                    let support = min(a.strength, b.strength)
+                    if r >= minRadius, r <= maxRadius, support > bestPair {
+                        bestPair = support
+                        x = 0.5 * (b.offset - a.offset)
+                        newRadius = r
                     }
                 }
             }
-            return written
-        }
-
-        private func glint(at point: Point, outward: Point, tangent: Point, flank: Double,
-                           reach: Double, scale: Double, bright: Double) -> Double {
-            let outer = point + (flank + 0.5) * outward
-            let inner = point + 1.25 * outward
-            let raw = max(crop.raw(point), crop.raw(inner), crop.raw(outer),
-                          crop.raw(inner + tangent), crop.raw(inner - tangent))
-            guard raw > bright else { return 1 }
-            // A broad bright surface has neighbours at the same level. An isolated glint does not.
-            let lateral = (0.52 * reach + 0.7) * tangent
-            let lateralLevel = max(crop.rawClamped(outer + lateral), crop.rawClamped(outer - lateral))
-            let radialLevel = crop.rawClamped(point + reach * outward)
-            let excess = (raw - bright) * scale
-            let isolation = max(0, (raw - max(radialLevel, lateralLevel)) * scale)
-            return max(0, 1 - min(15 * excess, 13 * isolation))
-        }
-
-        private func correction(center: Point, radius: Double, origin: Point,
-                                edges: UnsafeBufferPointer<Edge>, cutoff: Double) -> SIMD3<Double>? {
-            let shape = Shape(center - eye, depthSquared)
-            let shift = origin - center
-            var xx = 0.035, xy = 0.0, xz = 0.0
-            var yy = 0.035, yz = 0.0, zz = 0.055
-            var rhs = SIMD3<Double>.zero
-            var sides = Point.zero
-            for edge in edges {
-                let (error, gradient) = shape.residual(at: edge.offset + shift, radius: radius)
-                let robust = max(0, 1 - (error / cutoff) * (error / cutoff))
-                let weighted = (edge.weight * robust * robust) * gradient
-                xx += weighted.x * gradient.x
-                xy += weighted.x * gradient.y
-                xz += weighted.x * gradient.z
-                yy += weighted.y * gradient.y
-                yz += weighted.y * gradient.z
-                zz += weighted.z * gradient.z
-                rhs -= error * weighted
-                sides[simd_dot(edge.offset + shift, across) < 0 ? 0 : 1] -= weighted.z
+            if bestPair == 0 {
+                if let a = bestLeft, a.strength > (bestRight?.strength ?? 0) {
+                    x = -a.offset
+                } else if let b = bestRight {
+                    x = b.offset
+                }
             }
-            // Radius and horizontal position are coupled when most of one arc is hidden.
-            let balance = min(sides.x, sides.y) / max(0.01, max(sides.x, sides.y))
-            let sideways = abs(simd_dot(center - eye, across)) / self.radius
-            let occlusion = min(1, max(0.15, 3 * (sideways - 0.72)))
-            let prior = 0.70 * occlusion * (1 - balance) * (1 - balance)
-            zz += prior
-            rhs.z += prior * (self.radius - radius)
-            let determinant = xx * (yy * zz - yz * yz) - xy * (xy * zz - yz * xz)
-                + xz * (xy * yz - yy * xz)
-            guard determinant > 0.001 else { return nil }
-            let x = simd_dot(rhs, SIMD3(yy * zz - yz * yz, xz * yz - xy * zz, xy * yz - xz * yy))
-            let y = simd_dot(rhs, SIMD3(xz * yz - xy * zz, xx * zz - xz * xz, xy * xz - xx * yz))
-            let z = simd_dot(rhs, SIMD3(xy * yz - xz * yy, xy * xz - xx * yz, xx * yy - xy * xy))
-            let step = SIMD3(x, y, z) / determinant
-            return step / max(1, simd_length(step) / 1.5)
+            if let a = lower.max(by: { $0.strength < $1.strength }) {
+                let verticalScale = shape.scale(up)
+                let radiusDelta = (newRadius - fit.radius) * verticalScale
+                let offset = lowerOffset(a, profiles: profiles, spacing: spacing)
+                let scaleX = (Shape(fit.center - eye + 0.25 * across, depthSquared: depthSquared).scale(up) -
+                              Shape(fit.center - eye - 0.25 * across, depthSquared: depthSquared).scale(up)) * 2
+                let scaleY = (Shape(fit.center - eye + 0.25 * up, depthSquared: depthSquared).scale(up) -
+                              Shape(fit.center - eye - 0.25 * up, depthSquared: depthSquared).scale(up)) * 2
+                let slope = shape.slope(along: up, toward: across)
+                y = (radiusDelta - offset + (fit.radius * scaleX - slope) * x) / max(0.65, 1 - fit.radius * scaleY)
+                if let b = upper.max(by: { $0.strength < $1.strength }),
+                   b.strength >= 0.85 * a.strength,
+                   abs(offset + b.offset - 2 * radiusDelta) <= 2 * spacing {
+                    y = 0.5 * (b.offset - offset) - slope * x
+                }
+            }
+            x -= shape.slope(along: across, toward: up) * y
+            let relative = fit.center - prediction
+            let horizontal = min(extent, max(-extent, simd_dot(relative, across) + x))
+            let vertical = min(extent, max(-extent, simd_dot(relative, up) + y))
+            return Fit(center: prediction + horizontal * across + vertical * up, radius: newRadius)
         }
 
-        private func support(center: Point, radius: Double, origin: Point,
-                             edges: UnsafeBufferPointer<Edge>) -> Double {
-            let shape = Shape(center - eye, depthSquared)
-            var support = 0.0
-            for edge in edges {
-                let error = shape.residual(at: edge.offset + (origin - center), radius: radius).0
-                support += edge.weight * max(0, 1 - abs(error) / 1.15)
+        /// Sum the nonnegative lateral Michelson contrasts between the flanks
+        /// of the limbus, discounting a local median adjacent-pixel difference
+        /// from each rise. The gain lets one unobscured side support an eye in
+        /// the corner. The result is clipped to one.
+        private func score(_ profiles: [[Double]], noise: Double) -> Double {
+            var sum = 0.0
+            for k in 0..<2 {
+                let p = profiles[k]
+                let inside = p[6] + p[7] + p[8]
+                let outside = p[16] + p[17] + p[18]
+                sum += max(0, (outside - inside - 3 * noise) / max(1, outside + inside))
             }
-            let sideways = abs(simd_dot(center - eye, across)) / self.radius
-            let visibility = max(0.59, 1 - max(0, sideways - 0.65))
-            return min(1, 1.25 * support / (IrisLocator.arcWeight * visibility))
+            return min(1, 1.45 * sum)
         }
     }
 
-    /// The eye axes are in image coordinates and the radius is the longer limbus semi-axis.
     static func locate(in image: LumaImage, eyeball: SIMD2<Double>, expectedRadius: Double,
-                       across: SIMD2<Double>, up: SIMD2<Double>) -> IrisFit? {
-        guard (5...80).contains(expectedRadius), image.width > 0, image.height > 0,
+                       across: SIMD2<Double>, up: SIMD2<Double>, near predicted: SIMD2<Double>) -> IrisFit? {
+        guard (5...80).contains(expectedRadius), image.width > 1, image.height > 1,
               image.bytesPerRow >= image.width, image.bytesPerRow <= Int.max / image.height,
-              eyeball.x.isFinite, eyeball.y.isFinite else { return nil }
-        let acrossLength = simd_length(across)
-        guard acrossLength.isFinite, acrossLength > 0 else { return nil }
+              eyeball.x.isFinite, eyeball.y.isFinite, predicted.x.isFinite, predicted.y.isFinite else { return nil }
+        let acrossLength = simd_length(across), upLength = simd_length(up)
+        guard acrossLength.isFinite, acrossLength > 0, upLength.isFinite, upLength > 0 else { return nil }
         let horizontal = across / acrossLength
         let perpendicular = Point(-horizontal.y, horizontal.x)
-        let orientation = simd_dot(up, perpendicular)
-        guard orientation.isFinite, abs(orientation) > 0.1 else { return nil }
+        let orientation = simd_dot(up / upLength, perpendicular)
+        guard abs(orientation) > 0.1 else { return nil }
         let vertical = orientation < 0 ? -perpendicular : perpendicular
-        let extent = 1.3 * expectedRadius + 2
-        let limit = extent * (simd_abs(horizontal) + simd_abs(vertical))
-            + Point(repeating: 1.34 * expectedRadius + 8)
-        let first = eyeball - limit, last = eyeball + limit
-        guard first.x >= 1, first.y >= 1, last.x < Double(image.width - 1),
-              last.y < Double(image.height - 1) else { return nil }
-        let x = Int(first.x), y = Int(first.y)
-        let width = Int(last.x) + 1 - x, height = Int(last.y) + 1 - y
-        let origin = Point(Double(x) + 0.5, Double(y) + 0.5)
-
-        // A separable binomial blur keeps noise out of the radial derivative.
-        return withUnsafeTemporaryAllocation(of: UInt16.self, capacity: width * (height + 2)) { rows in
-            for row in 0..<(height + 2) {
-                let source = image.base + (y + row - 1) * image.bytesPerRow + x - 1
-                for column in 0..<width {
-                    rows.initializeElement(at: row * width + column,
-                                           to: UInt16(source[column]) + 2 * UInt16(source[column + 1])
-                                               + UInt16(source[column + 2]))
-                }
-            }
-            return withUnsafeTemporaryAllocation(of: UInt8.self, capacity: width * height) { pixels in
-                for index in 0..<pixels.count {
-                    let sum = rows[index] + 2 * rows[index + width] + rows[index + 2 * width]
-                    pixels.initializeElement(at: index, to: UInt8((sum + 8) / 16))
-                }
-                let crop = Crop(pixels: UnsafeBufferPointer(pixels), stride: width, height: height,
-                                source: image.base + y * image.bytesPerRow + x, sourceStride: image.bytesPerRow)
-                var fit = Search(crop: crop, eye: eyeball - origin, across: horizontal,
-                                 up: vertical, radius: expectedRadius, extent: extent).locate()
-                fit?.x += origin.x
-                fit?.y += origin.y
-                return fit
-            }
+        let extent = 0.7 * expectedRadius + 1
+        let origin = Point(repeating: 0.5)
+        let prediction = predicted - origin
+        guard image.contains(prediction), simd_length_squared(prediction - eyeball).isFinite else { return nil }
+        let reach = max(1.12 * expectedRadius + max(1.65, 0.17 * expectedRadius), 1.12 * 1.6 * expectedRadius)
+        let limit = extent * (simd_abs(horizontal) + simd_abs(vertical)) + Point(repeating: reach)
+        let needsBoundsCheck = !image.contains(prediction - limit) || !image.contains(prediction + limit)
+        let rays = [-horizontal, horizontal, -vertical, vertical].flatMap { axis in
+            let tangent = Point(-axis.y, axis.x)
+            return rotations.map { axis * $0.x + tangent * $0.y }
         }
+        return Search(image: image, eye: eyeball - origin, prediction: prediction, across: horizontal, up: vertical,
+                      radius: expectedRadius, extent: extent, rays: rays, needsBoundsCheck: needsBoundsCheck).locate()
     }
 }

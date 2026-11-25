@@ -96,20 +96,36 @@ which is roughly 190 px there.
 Within one fixation the ARKit reading moves by 25–40 px on that screen, yet
 the fixation as a whole lands 100–200 px away. Averaging over time cannot
 remove that, so the iPhone companion also measures the eye on its own. In each
-camera frame it fits the edge of both irises in the brightness plane, next to
-where ARKit's eye centres project, and adds the result to its reply. The frame
-stays on the phone.
+camera frame it looks for the edge of each iris in the brightness plane and
+adds what it finds to its reply. The frame stays on the phone.
+
+ARKit's own eye rotation says where the iris should be to within a few
+pixels, and the search covers only a small window around that place. It looks
+for the dark-to-bright step along the two sides of the iris, where lids
+rarely cover it, then centres itself on four brightness profiles: the way out
+of the iris towards the left, the right, down and up, each averaged along an
+arc. A search over the whole eye opening, which the first version used,
+locked onto lids and shadows on a real phone.
 
 ```json
-"iris": {"image": [1440, 1080], "camera": [a, b, c, d, x0, y0],
-         "left": [x, y, radius, score], "right": [x, y, radius, score]}
+"iris": {"image": [1920, 1080], "camera": [a, b, c, d, x0, y0],
+         "left": [x, y, radius, score], "right": [x, y, radius, score],
+         "profile": {"step": 0.05, "left": [[…], […], […], […]], "right": […]}}
 ```
 
-`x`, `y` and `radius` are frame pixels, and an eye that was not found is
-`null`. `camera` maps camera space to the frame: a point `(X, Y, Z)` appears
-at `(x0, y0) + [[a, b], [c, d]] · (X, Y) / −Z`. The member is optional. A PC
-that does not know it ignores it, and a reply without it comes from an older
-phone.
+`x`, `y` and `radius` are frame pixels, and `score` is how large the
+brightness step across the edge is on the two sides, from 0 to 1. A PC treats
+a score below 0.3 as not found. `camera` maps camera space to the frame: a
+point `(X, Y, Z)` appears at `(x0, y0) + [[a, b], [c, d]] · (X, Y) / −Z`.
+
+`profile` holds the four profiles behind each fit, towards −x, +x, −y and +y
+of the face. Each has 25 samples spaced `step` iris radii apart; sample 12
+lies on the fitted edge and lower ones inside the iris. They show how sharp
+the edge was and whether the fit sits on it, so the fit can be judged and
+redone on the PC from recorded numbers. They are averages along arcs, a
+hundred numbers per eye, and not pixels of the frame. An eye whose window
+leaves the frame is `null`. The `iris` member is optional. A PC that does not
+know it ignores it, and a reply without it comes from an older phone.
 
 `personalization/iris.py` turns the reading into an eye direction. The ray
 through the iris pixel meets a sphere around the eye centre at the iris, and
@@ -118,14 +134,16 @@ screen fit is the one above with this direction in place of ARKit's eye
 rotation. A phone below the screen sees the eyes from well below, where a
 centre a few millimetres off bends the whole mapping, so the fit also moves
 the centre the eye turns about away from the one ARKit tracks. Gaze setup
-stores the reading with every fixation, and
+stores the reading and the profiles with every fixation, and
 `scripts/evaluate_gaze_setup.py` scores such a setup with both eye signals.
 
 This is an experiment, and tracking still uses ARKit's eye rotation. One
-degree of eye rotation moves the iris by about 0.18 mm, which at 60 cm is a
-fraction of a frame pixel, so the fit has to hold to a small part of a pixel
-to beat ARKit. Whether a phone on a desk reaches that is what recorded setups
-have to show.
+degree of eye rotation moves the iris by about 0.18 mm, which at 60 cm is
+0.4 of a frame pixel, so the fit has to hold to a small part of a pixel to
+beat ARKit. On rendered eyes the centre typically lands within 0.2 px of the
+true one, and within 0.45 px in hard scenes such as an iris in the corner of
+the eye or a dim room. Whether a phone on a desk reaches that is what
+recorded setups have to show.
 
 While tracking, an observation is supported when the head is within 20 cm of a
 head position seen in setup, 8 cm when the screen size was fitted, and turned
