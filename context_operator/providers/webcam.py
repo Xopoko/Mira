@@ -19,7 +19,7 @@ from collections import deque
 from PySide6.QtCore import QObject, QTimer, Qt, Signal
 from PySide6.QtGui import QImage
 
-from ..core.contracts import Gaze
+from ..core.contracts import GAZE_TTL, Gaze
 from ..core.webcam import WebcamObservation
 from ..foundations.gaze.smoothing import Smoother
 from ..foundations.local_models import STANDALONE
@@ -118,7 +118,7 @@ class InferenceWorker(threading.Thread):
                     seq, captured, width, height, pixels = self.frames.get(timeout=.2)
                 except queue.Empty:
                     continue
-                if time.monotonic() - captured >= .20:
+                if not 0 <= time.monotonic() - captured < GAZE_TTL:
                     continue
                 child.stdin.write(HEADER.pack(b'WCF1', seq, captured, width, height))
                 child.stdin.write(pixels)
@@ -173,11 +173,10 @@ class InferenceWorker(threading.Thread):
 class WebcamGaze(QObject):
     failed = Signal(object, str)
 
-    def __init__(self, bounds, device_id, *, folder=LOCAL, calibrated=True, worker_factory=InferenceWorker):
+    def __init__(self, bounds, device_id, *, folder=LOCAL, calibrated=True):
         super().__init__()
         self.bounds, self.device_id = bounds, device_id
         self.folder, self.calibrated = folder, calibrated
-        self.worker_factory = worker_factory
         self.worker = None
         self.camera = self.capture = self.sink = None
         self.profile = None
@@ -229,7 +228,7 @@ class WebcamGaze(QObject):
         self.capture.setVideoSink(self.sink)
         self.sink.videoFrameChanged.connect(self._frame)
         self.camera.errorOccurred.connect(self._camera_error)
-        self.worker = self.worker_factory()
+        self.worker = InferenceWorker()
         self.active = True
         self.error = ''
         self.started = time.monotonic()
@@ -306,7 +305,7 @@ class WebcamGaze(QObject):
         self.last_media_time = media_time
         self.frame_clock = min(self.frame_clock if self.frame_clock is not None else now-media_time, now-media_time)
         captured = min(now, self.frame_clock + media_time)
-        if now - captured >= .20:
+        if now - captured >= GAZE_TTL:
             return
         self.last_frame = now
         image = frame.toImage()
@@ -347,7 +346,7 @@ class WebcamGaze(QObject):
         observation = self.latest()
         if self.error:
             return None, self.error
-        if observation.reason or not observation.features or not 0 <= now - observation.captured < .20:
+        if observation.reason or not observation.features or not 0 <= now - observation.captured < GAZE_TTL:
             self.smoother.reset()
             return None, observation.reason or 'Waiting for fresh webcam gaze data'
         if self.profile is None:
@@ -362,7 +361,7 @@ class WebcamGaze(QObject):
         if observation.seq != self.last_seq or self.smoother.point is None:
             self.last_seq = observation.seq
             self.point = self.smoother.update(point, observation.captured)
-        radius = max(180., min(650., self.profile.validation_radius))
+        radius = self.profile.validation_radius
         return Gaze(*self.point, observation.captured, radius, 'webcam'), 'Webcam · ready as a backup'
 
     def stop(self):

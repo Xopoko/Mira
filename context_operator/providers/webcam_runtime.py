@@ -24,7 +24,6 @@ MAGIC = b"WCF1"
 HEADER = struct.Struct("<4sQdII")
 MAX_WIDTH = 1280
 MAX_HEIGHT = 720
-MAX_FRAME_BYTES = MAX_WIDTH * MAX_HEIGHT * 3
 FEATURE_COUNT = 8
 
 
@@ -242,9 +241,6 @@ def _run(model_path: Path) -> int:
                 _emit({"schema": SCHEMA, "error": "invalid webcam frame header"})
                 return 2
             byte_count = width * height * 3
-            if byte_count > MAX_FRAME_BYTES:
-                _emit({"schema": SCHEMA, "error": "webcam frame exceeds limit"})
-                return 2
             raw_frame = _read_exact(sys.stdin.buffer, byte_count)
             check_policy()
             frame = np.frombuffer(raw_frame, dtype=np.uint8).reshape((height, width, 3))

@@ -1,9 +1,10 @@
 # Webcam fallback
 
 Mira can use a calibrated webcam when the iPhone temporarily loses gaze. A
-fresh iPhone estimate always takes priority. The webcam needs at least three
-distinct supported frames spanning at least 120 ms to take over. Observations
-aged 200 ms or more are rejected. Mira switches back when the iPhone recovers.
+fresh iPhone estimate always takes priority. The webcam is eligible once it
+has at least three distinct supported frames spanning at least 120 ms. Those
+frames can arrive while the iPhone is still tracking. Observations aged 200 ms
+or more are rejected. Mira switches back when the iPhone recovers.
 
 ## Runtime
 
@@ -38,8 +39,9 @@ for the Python runtime and model.
 Set up again after moving the webcam, changing monitor geometry or changing
 your viewing position. A failed attempt preserves the previous accepted
 profile. **Overview** reports which source is active. Switching sources clears
-pending actions. Click learning and the [game gaze feed](game-gaze.md) still
-use iPhone measurements.
+the saved voice target and dwell, and cancels decisions awaiting dispatch.
+Actions already sent to Windows cannot be recalled. Click learning and the
+[game gaze feed](game-gaze.md) still use iPhone measurements.
 
 ## Capture and profiles
 
@@ -60,5 +62,5 @@ attempts contain numeric observations and results.
 Run the webcam unit tests from the repository root.
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest tests.test_webcam_calibration tests.test_webcam_features tests.test_webcam_integration tests.test_webcam_capture
+.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_webcam_*.py"
 ```

@@ -5,6 +5,7 @@ from PySide6.QtCore import Qt, QTimer, QRectF
 from PySide6.QtGui import QColor, QPainter, QPen, QIcon, QShortcut, QKeySequence
 from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy
 
+from ..core.contracts import GAZE_TTL
 from ..personalization.webcam import WebcamSession, WebcamProfileStore
 from ..personalization.webcam_attempts import WebcamAttemptStore
 from ..providers.webcam import WebcamGaze
@@ -289,7 +290,7 @@ class WebcamSetupWindow(QMainWindow):
             obs = self.provider.latest()
             if obs.reason:
                 return obs.reason
-            if time.monotonic()-obs.captured > .20:
+            if not 0 <= time.monotonic()-obs.captured < GAZE_TTL:
                 return 'Waiting for a fresh camera frame\nCheck the camera'
         reason = self.session.hold_reason or 'Keep looking at the point'
         count = getattr(self.session, 'sample_count', len(self.session.frames))
@@ -301,7 +302,7 @@ class WebcamSetupWindow(QMainWindow):
         if self.provider is None:
             return False
         obs = self.provider.latest()
-        return bool(obs.features and not obs.reason and 0 <= time.monotonic()-obs.captured < .20)
+        return bool(obs.features and not obs.reason and 0 <= time.monotonic()-obs.captured < GAZE_TTL)
 
     def tick(self):
         if self.closed:
@@ -367,7 +368,6 @@ class WebcamSetupWindow(QMainWindow):
             if self.c.win.bounds() != self.bounds:
                 raise ValueError('The screen layout changed')
             self.store.adopt(self.session.candidate, self.session.report)
-            self.store.load(self.bounds, self.device_id)
             self.applied = True
             self.c.webcam_status = 'Webcam setup saved · connect the webcam'
             self.c.changed.emit()
@@ -438,7 +438,7 @@ class WebcamSetupWindow(QMainWindow):
         inaccurate = sum(row['p90_px'] > report.limits['p90_px'] for row in report.targets)
         unstable = sum(row['jitter_px'] > report.limits['jitter_px'] for row in report.targets)
         if uncovered:
-            failures.append(f'The camera often lost track of gaze at {uncovered} of 5 points.')
+            failures.append(f'Too few readings were on screen and within the setup range at {uncovered} of 5 points.')
         if inaccurate:
             failures.append(f'Gaze was too far from {inaccurate} of 5 points.')
         if unstable:

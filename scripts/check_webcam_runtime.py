@@ -64,7 +64,6 @@ def run(python: Path, model: Path, fixture: Path) -> tuple[dict, int]:
         shell=False,
         bufsize=0,
     )
-    assert process.stdin is not None and process.stdout is not None
     lines: queue.Queue = queue.Queue()
     reader = threading.Thread(target=_read_lines, args=(process.stdout, lines), daemon=True)
     reader.start()

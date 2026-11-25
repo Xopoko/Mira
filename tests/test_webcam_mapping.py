@@ -30,8 +30,10 @@ class MappingTests(unittest.TestCase):
         self.assertLess(check.p90_px, baseline.validate(groups, CHECK_TARGETS).p90_px*.1)
         self.assertTrue(check.usable)
         frozen = (model.coefficients, model.mapping)
-        # Arbitrary check measurements cannot select/retrain the frozen model.
-        model.validate([[curved((.5, .5))]*12]*5, CHECK_TARGETS)
+        wrong_groups = [[curved(target)]*12 for target in reversed(CHECK_TARGETS)]
+        wrong_check = model.validate(wrong_groups, CHECK_TARGETS)
+        self.assertGreater(wrong_check.p90_px, wrong_check.limits['p90_px'])
+        self.assertIs(wrong_check.usable, False)
         self.assertEqual(frozen, (model.coefficients, model.mapping))
 
     def test_head_compensation_uses_per_frame_groups_and_grouped_cv(self):

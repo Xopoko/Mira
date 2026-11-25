@@ -102,7 +102,6 @@ def fit_mapping(features, pixels, groups=None):
     The independent five-point acceptance remains a separate decision.
     """
     features, pixels = np.asarray(features, dtype=float), np.asarray(pixels, dtype=float)
-    weights, baseline = _fit(features, pixels, 'iris_affine', 0.)
     baseline_error = _cross_validation(features, pixels, 'iris_affine', 0., groups)
     if not math.isfinite(baseline_error):
         raise ValueError('Training gaze is not diverse enough across screen targets')

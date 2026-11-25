@@ -17,8 +17,9 @@ from typing import Iterable
 
 import numpy as np
 
-from ..core.contracts import Rect
+from ..core.contracts import GAZE_TTL, Rect
 from ..core.webcam import WebcamObservation
+from .session import usability_limits
 from .webcam_mapping import WebcamMapping, fit_mapping
 
 LEGACY_WEBCAM_ENGINE_VERSION = 'webcam-iris-affine-support-v1'
@@ -30,7 +31,6 @@ CHECK_TARGETS = ((.23, .23), (.77, .23), (.50, .35), (.23, .77), (.77, .77))
 # Fixed joint eye/head neighborhood; the last three terms detect camera-relative
 # movement and scale changes as well as the iris and nose features.
 _SUPPORT_TOLERANCES = (.18, .18, .20, .20, .20, .06, .06, .06)
-_FRESH_SECONDS = .20
 _MIN_FRAMES = 10
 _MIN_DURATION = .65
 _WINDOW_SECONDS = 2.40
@@ -53,10 +53,10 @@ def _feature_row(features):
     return values
 
 
-def _matrix(rows, columns=FEATURE_COUNT):
+def _matrix(rows):
     values = np.asarray(rows, dtype=float)
-    if values.ndim != 2 or values.shape[1] != columns or len(values) == 0 or not np.isfinite(values).all():
-        raise ValueError(f'Expected a non-empty finite matrix with {columns} columns')
+    if values.ndim != 2 or values.shape[1] != FEATURE_COUNT or len(values) == 0 or not np.isfinite(values).all():
+        raise ValueError(f'Expected a non-empty finite matrix with {FEATURE_COUNT} columns')
     return values
 
 
@@ -171,9 +171,7 @@ class WebcamProfile:
         if anchors.shape != (len(TRAIN_TARGETS), FEATURE_COUNT) or not np.isfinite(anchors).all():
             return False
         delta = (anchors - row) / np.asarray(_SUPPORT_TOLERANCES)
-        distance2 = np.sum(delta * delta, axis=1)
-        return bool(np.any(np.all(np.abs(delta) <= 1.0, axis=1) &
-                           (distance2 <= float(len(_SUPPORT_TOLERANCES)))))
+        return bool(np.any(np.all(np.abs(delta) <= 1.0, axis=1)))
 
     def predict(self, features):
         row = _feature_row(features)
@@ -225,14 +223,12 @@ class WebcamProfile:
                          'frames': len(matrix), 'invalid_frames': invalid,
                          'coverage': coverage, 'median_px': median, 'p90_px': p90,
                          'jitter_px': jitter})
-        h = display[3]
-        limits = {'median_px': min(400., h * .28), 'p90_px': min(700., h * .50),
-                  'jitter_px': min(150., h * .11), 'coverage': .80}
+        limits = usability_limits(display[3])
         median = float(np.median(all_errors))
         p90 = float(np.percentile(all_errors, 90))
         jitter = float(np.median(all_jitters))
-        usable = (all(v >= .80 for v in coverages) and median <= limits['median_px'] and
-                  p90 <= limits['p90_px'] and jitter <= limits['jitter_px'] and
+        usable = (all(v >= limits['coverage'] for v in coverages) and median <= limits['median_px'] and
+                  p90 <= limits['p90_px'] and
                   all(r['p90_px'] <= limits['p90_px'] and r['jitter_px'] <= limits['jitter_px'] for r in rows))
         check_rows = tuple({'target_fraction': r['target_fraction'],
                             'features': _plain(group), 'invalid_frames': int(invalid)}
@@ -274,7 +270,6 @@ class WebcamSession:
         self.frames = []
         self.last_seq = -1
         self.last_observation = None
-        self.last_confirmed_seq = -1
         self.hold_reason = 'Waiting for a fresh camera frame'
         self.candidate = None
         self.report = None
@@ -365,7 +360,6 @@ class WebcamSession:
         """A new explicitly opened stream has a new sequence counter."""
         self._clear('Keep looking at the point')
         self.last_seq = -1
-        self.last_confirmed_seq = -1
 
     def feed(self, obs: WebcamObservation, now: float):
         if self.phase not in ('train', 'check'):
@@ -386,7 +380,7 @@ class WebcamSession:
         if type(obs.seq) is not int:
             self._clear('Invalid camera frame number')
             return
-        if current - captured > _FRESH_SECONDS:
+        if current - captured >= GAZE_TTL:
             if (obs.seq == self.last_seq and self.last_observation is not None
                     and captured == self.last_observation.captured):
                 # Polling an old result is not another broken capture. Inference
@@ -414,7 +408,7 @@ class WebcamSession:
         if self.frames:
             previous = self.frames[-1][0]
             gap = captured - float(previous.captured)
-            if gap <= 0 or gap >= _FRESH_SECONDS:
+            if gap <= 0 or gap >= GAZE_TTL:
                 self._clear('The camera stream stopped. Look at the point again.')
         if self.frames:
             window_start = captured - _WINDOW_SECONDS
@@ -452,8 +446,7 @@ class WebcamSession:
         if self.phase not in ('train', 'check') or not self.ready or not self.last_observation:
             return False
         obs = self.last_observation
-        if (obs.seq == self.last_confirmed_seq or not math.isfinite(float(now)) or
-                float(now) < obs.captured or float(now) - obs.captured > _FRESH_SECONDS):
+        if not 0 <= float(now) - obs.captured < GAZE_TTL:
             self._clear('A recent camera frame is needed to confirm')
             return False
         feature_rows = [self.frames[i][1] for i in self._inlier_indices]
@@ -487,7 +480,6 @@ class WebcamSession:
             else:
                 self.index += 1
             self.check = checks
-        self.last_confirmed_seq = obs.seq
         self.frames = []
         self.last_observation = None
         self.ready = False

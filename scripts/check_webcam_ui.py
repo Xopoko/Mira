@@ -143,13 +143,12 @@ class WebcamUiWalkthrough(unittest.TestCase):
                 self.assertTrue(window.collecting)
                 camera = window.provider
                 seq = 1
-                target_rendered = False
                 for target in (*TRAIN_TARGETS, *CHECK_TARGETS):
                     values = feature_for(target)
                     previous = (window.session.phase, window.session.index)
                     base = window.collect_after + .01
                     # Six distinct frames/second was previously an impossible gate.
-                    for frame in range(20):
+                    for frame in range(10):
                         captured = base + frame / 6
                         clock['now'] = captured + .06
                         window.provider.observation = WebcamObservation(seq, captured, values)
@@ -163,15 +162,13 @@ class WebcamUiWalkthrough(unittest.TestCase):
                         clock['now'] = captured + .21
                         window.tick()
                         seq += 1
-                        if not target_rendered and frame == 5:
+                        advanced = previous != (window.session.phase, window.session.index)
+                        self.assertEqual(advanced, frame == 9, f'After {frame + 1} distinct frames')
+                        if target == TRAIN_TARGETS[0] and frame == 8:
                             APP.processEvents()
                             self.assertFalse(window.session.ready)
                             self.assertGreater(window.session.progress, 0.)
                             self.assertFalse(window.grab().isNull())
-                            target_rendered = True
-                        if previous != (window.session.phase, window.session.index):
-                            break
-                    self.assertNotEqual(previous, (window.session.phase, window.session.index))
 
             self.assertEqual(window.session.phase, 'result')
             self.assertEqual(len(window.session.train), 9)

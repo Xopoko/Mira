@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from context_operator.core.contracts import Rect
+from context_operator.core.contracts import GAZE_TTL, Rect
 from context_operator.core.webcam import WebcamObservation
 from context_operator.personalization.webcam import (
     CHECK_TARGETS, TRAIN_TARGETS, WebcamProfile, WebcamProfileStore, WebcamSession,
@@ -107,13 +107,27 @@ class WebcamProfileTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Set up the webcam first'):
                 WebcamProfileStore(folder).load(BOUNDS, 'camera-1')
 
-    def test_adopt_does_not_trust_mutated_usable_flag(self):
+    def test_store_does_not_trust_mutated_usable_flag(self):
         profile, report = fitted_profile()
         with tempfile.TemporaryDirectory() as folder:
             store = WebcamProfileStore(folder)
             with self.assertRaises(ValueError):
                 store.adopt(profile, replace(report, usable=False))
             self.assertFalse(store.path.exists())
+
+            wrong_groups = [[feature_for(target)] * 12 for target in reversed(CHECK_TARGETS)]
+            failed_check = profile.validate(wrong_groups, CHECK_TARGETS)
+            forged = replace(failed_check, usable=True)
+            profile = replace(profile, validation_p90_px=forged.p90_px)
+            with self.subTest(operation='adopt'):
+                with self.assertRaises(ValueError):
+                    store.adopt(profile, forged)
+                self.assertFalse(store.path.exists())
+            with self.subTest(operation='load'):
+                payload = store._envelope(profile, forged)
+                store.path.write_bytes(store._canonical(payload))
+                with self.assertRaises(ValueError):
+                    store.load(BOUNDS, profile.device_id)
 
 
 class WebcamSessionTests(unittest.TestCase):
@@ -277,6 +291,18 @@ class WebcamSessionTests(unittest.TestCase):
         session.feed(WebcamObservation(9, .78, feature), .78)
         self.assertEqual(len(session.frames), 1)
         self.assertFalse(session.ready)
+
+    def test_frame_at_freshness_limit_cannot_enter_or_confirm_fixation(self):
+        session = WebcamSession(BOUNDS, 'camera-1')
+        feature = feature_for(TRAIN_TARGETS[0])
+        session.feed(WebcamObservation(0, 0., feature), GAZE_TTL)
+        self.assertFalse(session.frames)
+        for i in range(10):
+            stamp = (i - 9) * .08
+            session.feed(WebcamObservation(i + 1, stamp, feature), stamp)
+        self.assertTrue(session.ready)
+        self.assertFalse(session.confirm(GAZE_TTL))
+        self.assertEqual(session.index, 0)
 
     def test_rolling_window_detects_gradual_pose_drift(self):
         session = WebcamSession(BOUNDS, 'camera-1')

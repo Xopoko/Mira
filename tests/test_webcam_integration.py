@@ -28,12 +28,11 @@ class ArbitrationTests(unittest.TestCase):
     def test_primary_coordinates_remain_authoritative_and_disagreement_is_reported(self):
         arbitrator = GazeArbitrator()
         primary = Gaze(300., 200., 10.00, 55., 'iphone')
-        secondary = Gaze(720., 600., 10.02, 40., 'webcam')
-        for stamp in (10.00, 10.06, 10.13):
-            choice = arbitrator.choose(primary, Gaze(720., 600., stamp, 40., 'webcam'), stamp + .01)
-            self.assertIs(choice.gaze, primary)
-            self.assertEqual((choice.gaze.x, choice.gaze.y, choice.gaze.source), (300., 200., 'iphone'))
-        self.assertFalse(choice.corroborated)
+        for stamp, corroborated in ((10.00, False), (10.06, False), (10.13, None)):
+            with self.subTest(stamp=stamp):
+                choice = arbitrator.choose(primary, Gaze(720., 600., stamp, 40., 'webcam'), stamp + .01)
+                self.assertIs(choice.gaze, primary)
+                self.assertIs(choice.corroborated, corroborated)
 
     def test_fallback_requires_three_distinct_frames_and_minimum_span(self):
         arbitrator = GazeArbitrator()
@@ -45,6 +44,13 @@ class ArbitrationTests(unittest.TestCase):
         choice = arbitrator.choose(None, values[2], 20.14)
         self.assertEqual(choice.mode, 'webcam')
         self.assertIs(choice.gaze, values[2])
+
+        for stamps in ((20., 20.04, 20.08), (20., 20.13, 20.13)):
+            with self.subTest(stamps=stamps):
+                arbitrator.reset()
+                for stamp in stamps:
+                    webcam = Gaze(100., 90., stamp, 50., 'webcam')
+                    self.assertEqual(arbitrator.choose(None, webcam, stamp + .01).mode, 'none')
 
     def test_stale_future_wrong_source_and_no_face_reset_fallback(self):
         arbitrator = GazeArbitrator()
