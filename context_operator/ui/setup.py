@@ -432,7 +432,8 @@ class SetupWindow(QMainWindow):
         self.retry_button.setVisible(not self.running and (phase == 'result' or self.error != '' or phase == 'fit'))
         self.apply_button.setVisible(self._can_adopt())
         self.connect_button.setVisible(not self.running)
-        set_primary(self.connect_button, self.worker is None and phase != 'result')
+        set_primary(self.connect_button, self.worker is None and phase != 'result'
+                    and not self.begin_button.isEnabled())
         self.cancel_button.setVisible(not self.running)
         show_hud = not self.running or not ready
         for item in (self.heading, self.count):

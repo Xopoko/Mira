@@ -392,7 +392,7 @@ class Window(QMainWindow):
         return values
 
     def build_profile(self):
-        layout,_,header=self.page('Calibration','Gaze setup teaches Mira your eyes. Click learning can refine it.',860)
+        layout,_,header=self.page('Calibration','Gaze setup teaches Mira your eyes in about a minute.',860)
         self.profile_setup=QPushButton('Set up · about a minute')
         self.profile_setup.setObjectName('primary');self.profile_setup.clicked.connect(self.open_setup)
         header.addWidget(self.profile_setup,0,Qt.AlignBottom)
