@@ -10,47 +10,29 @@ from context_operator.core.contracts import Rect
 from context_operator.personalization import StarterSession
 from context_operator.personalization.session import STARTER_PROTOCOL
 from context_operator.providers.gaze import learning_path
+from context_operator.personalization import geometry
 from context_operator.personalization.model import StarterProfile
 from context_operator.personalization.history import preserve_attempt
+from gaze_fixture import PIXEL_MM, burst, reading, turned
 
 
 BOUNDS = Rect(0, 0, 1920, 1080)
+METADATA = {'display': BOUNDS.as_list(), 'engine': 'arkit-truedepth-v1',
+            'features': 22, 'protocol': STARTER_PROTOCOL}
 
 
-def feature_for(target, *, bounds=BOUNDS):
-    fx = target[0] / bounds.w
-    fy = target[1] / bounds.h
-    px = (fx-.5)*.16
-    py = (fy-.5)*.10
-    direction = np.array([px/.7, py/.7, 1.])
-    direction /= np.linalg.norm(direction)
-    row = np.zeros(22)
-    row[0:4] = [px-.005, py, px+.005, py]
-    row[4:7] = [0., 0., -.7]
-    row[7:13] = [1., 0., 0., 1., 0., 0.]
-    row[13:19] = [*direction, *direction]
-    row[19:22] = direction
-    return row
+def pixels(fractions, bounds=BOUNDS):
+    return np.asarray([[bounds.x+bounds.w*x, bounds.y+bounds.h*y] for x, y in fractions])
 
 
-def burst_for(target, *, bounds=BOUNDS):
-    center = feature_for(target, bounds=bounds)
-    burst = np.tile(center, (12, 1))
-    noise = np.linspace(-.0004, .0004, len(burst))
-    burst[:, 0] += noise
-    burst[:, 2] -= noise
-    return burst
+def feature_for(target, *, bounds=BOUNDS, **seat):
+    return reading(target, bounds, **seat)[0]
 
 
-def starter_profile(bounds=BOUNDS, *, offset=0):
-    training_targets = np.asarray([
-        [(bounds.x+bounds.w*x), (bounds.y+bounds.h*y)]
-        for x, y in StarterSession.train_targets
-    ])
-    bursts = [burst_for(target, bounds=bounds) for target in training_targets]
-    metadata = {'display': bounds.as_list(), 'engine': 'arkit-truedepth-v1',
-                'features': 22, 'protocol': STARTER_PROTOCOL}
-    return StarterProfile.fit(bursts, training_targets + [offset, 0], metadata)
+def starter_profile(bounds=BOUNDS, *, offset=0, pixel_mm=PIXEL_MM, camera=None, **seat):
+    targets = pixels(StarterSession.train_targets, bounds)
+    bursts, origins = zip(*(burst(target, bounds, camera=camera, **seat) for target in targets))
+    return StarterProfile.fit(bursts, origins, targets+[offset, 0], dict(METADATA, display=bounds.as_list()), pixel_mm)
 
 
 class UncertainCandidate:
@@ -63,69 +45,101 @@ class UncertainCandidate:
 
 
 class StarterTests(unittest.TestCase):
-    def turning_head_profile(self):
-        targets=np.array([[BOUNDS.w*x,BOUNDS.h*y] for x,y in StarterSession.train_targets])
-        bursts=[]
+    def assert_lands_on(self, profile, targets, limit, **seat):
         for target in targets:
-            burst=burst_for(target)
-            angle=(target[0]/BOUNDS.w-.5)*1.65
-            c,s=np.cos(angle),np.sin(angle)
-            burst[:,7:13]=[c,0,0,1,-s,0]
-            bursts.append(burst)
-        metadata={'display':BOUNDS.as_list(),'engine':'arkit-truedepth-v1','features':22,'protocol':STARTER_PROTOCOL}
-        return StarterProfile.fit(bursts,targets,metadata)
+            prediction = profile.predict(feature_for(target, **seat))
+            self.assertLess(np.linalg.norm(prediction-target), limit, (target, seat))
 
-    def test_training_head_turns_are_supported_after_reload(self):
-        profile=self.turning_head_profile()
-        self.assertTrue(all(profile.supports(row) for row in profile.training_x))
-        extreme=profile.training_x[0].copy();extreme[7:13]=[0,0,0,1,-1,0]
-        self.assertEqual(profile.support_reason(extreme),'head_rotation')
-        with tempfile.TemporaryDirectory() as folder:
-            path=Path(folder)/'profile.npz';profile.save(path)
-            loaded=StarterProfile.load(path,profile.metadata)
-            self.assertTrue(all(loaded.supports(row) for row in profile.training_x))
-            np.testing.assert_array_equal(profile.predict(profile.training_x), loaded.predict(profile.training_x))
-
-    def test_separate_known_head_and_eye_positions_do_not_imply_known_combination(self):
-        profile=self.turning_head_profile()
-        mixed=profile.training_x[0].copy();mixed[7:13]=profile.training_x[2,7:13]
-        self.assertEqual(profile.support_reason(mixed),'head_eye_combination')
-
-    def test_starter_is_baseline_free_affine_and_round_trips(self):
+    def test_setup_finds_the_screen_and_round_trips(self):
         profile = starter_profile()
-        self.assertEqual(profile.arrays['training_x'].shape, (9, 22))
-        self.assertEqual(profile.arrays['coef'].shape, (2, 2))
-        self.assertEqual(profile.arrays['intercept'].shape, (2,))
-        self.assertEqual(profile.metadata['protocol'], STARTER_PROTOCOL)
-        for fraction in StarterSession.train_targets:
-            target = [fraction[0]*BOUNDS.w, fraction[1]*BOUNDS.h]
-            prediction = profile.predict(feature_for(target))
-            self.assertLess(np.linalg.norm(prediction-target), 35.)
-
+        self.assertEqual(profile.training_x.shape, (len(StarterSession.train_targets), 22))
+        self.assertAlmostEqual(profile.settings['viewing_m'], .76, delta=.03)
+        np.testing.assert_allclose(profile.arrays['gains'], geometry.EYE_GAIN, atol=.02)
+        self.assert_lands_on(profile, pixels(StarterSession.check_targets), 12.)
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder)/'starter.npz'
             profile.save(path)
             loaded = StarterProfile.load(path, profile.metadata)
-            np.testing.assert_allclose(loaded.predict(feature_for([960, 540])),
-                                       profile.predict(feature_for([960, 540])))
+            self.assertTrue(all(loaded.supports(row) for row in profile.training_x))
+            np.testing.assert_array_equal(loaded.predict(profile.training_x), profile.predict(profile.training_x))
+        grazing = feature_for([960, 540])
+        grazing[7:13] = [0, 0, 0, 1, -1, 0]
+        grazing[13:19] = [1, 0, .01, 1, 0, .01]
+        self.assertTrue(np.isnan(profile.predict(grazing)).all())
 
-    def test_starter_support_is_single_pose_and_bounds_large_head_motion(self):
-        profile = starter_profile()
-        feature = feature_for([BOUNDS.w*.45, BOUNDS.h*.45])
-        self.assertTrue(profile.supports(feature))
-        modest = feature.copy()
-        modest[6] -= .05
-        self.assertTrue(profile.supports(modest))
+    def test_one_stray_frame_does_not_fail_setup(self):
+        targets = pixels(StarterSession.train_targets)
+        bursts, origins = zip(*(burst(target, BOUNDS) for target in targets))
+        bursts[4][0, 13:19] = [0, 0, -1, 0, 0, -1]
+        profile = StarterProfile.fit(bursts, origins, targets, METADATA, PIXEL_MM)
+        self.assert_lands_on(profile, pixels(StarterSession.check_targets), 15.)
+
+    def test_head_turn_and_eyes_alone_reach_the_same_pixel(self):
+        checks = pixels(StarterSession.check_targets)
+        self.assert_lands_on(starter_profile(turn=1.), checks, 12., turn=0.)
+        self.assert_lands_on(starter_profile(turn=0.), checks, 12., turn=1.)
+
+    def test_moving_the_head_after_setup_keeps_the_mapping(self):
+        profile = starter_profile(turn=.5)
+        moved = dict(head=(.05, .02, -.60), turn=.2)
+        self.assertTrue(profile.supports(feature_for([960, 540], **moved)))
+        self.assert_lands_on(profile, pixels(StarterSession.check_targets), 15., **moved)
+
+    def test_phone_on_its_side_and_leaning_back_fits_the_same(self):
+        lean, side = np.radians(30), np.array([[0., -1, 0], [1, 0, 0], [0, 0, 1]])
+        camera = side@np.array([[1, 0, 0], [0, np.cos(lean), -np.sin(lean)], [0, np.sin(lean), np.cos(lean)]])
+        profile = starter_profile(turn=.5, camera=camera)
+        for target in pixels(StarterSession.check_targets):
+            row, _ = turned(*reading(target, BOUNDS, turn=.2), camera)
+            self.assertLess(np.linalg.norm(profile.predict(row)-target), 12.)
+
+    def test_screen_of_unknown_size_fits_and_is_trusted_only_near_the_seat(self):
+        profile = starter_profile(pixel_mm=None, pitch_mm=.15)
+        self.assertFalse(profile.settings['screen_size_known'])
+        self.assert_lands_on(profile, pixels(StarterSession.check_targets), 12., pitch_mm=.15)
+        self.assert_lands_on(starter_profile(pixel_mm=40.), pixels(StarterSession.check_targets), 12.)
+        shifted = dict(head=(.1, 0., -.7))
+        self.assertEqual(profile.support_reason(feature_for([960, 540], pitch_mm=.15, **shifted)), 'head_position')
+        self.assertEqual(starter_profile().support_reason(feature_for([960, 540], **shifted)), '')
+
+    def test_support_follows_the_seat_used_in_setup(self):
+        profile = starter_profile(turn=.8)
+        feature = feature_for([960, 540], turn=.8)
+        self.assertEqual(profile.support_reason(feature), '')
         far = feature.copy()
         far[6] -= .26
-        self.assertFalse(profile.supports(far))
+        self.assertEqual(profile.support_reason(far), 'head_position')
+        turned = feature.copy()
+        turned[7:13] = [0, 0, 0, 1, -1, 0]
+        self.assertEqual(profile.support_reason(turned), 'head_rotation')
+        self.assertEqual(profile.support_reason(feature[:21]), 'invalid_features')
+        # That turn seen only from another seat does not make it known here.
+        profile.training_x[:6, 4] += .3
+        profile.training_x[:6, 7:13] = turned[7:13]
+        self.assertEqual(profile.support_reason(turned), 'head_rotation')
 
-    def test_target_layout_is_nine_plus_five_and_disjoint(self):
+    def test_incomplete_fixations_are_rejected(self):
+        targets = pixels(StarterSession.train_targets)
+        bursts, origins = zip(*(burst(target, BOUNDS) for target in targets))
+        with self.assertRaises(ValueError):
+            StarterProfile.fit(bursts[:5], origins[:5], targets[:5], METADATA, PIXEL_MM)
+        with self.assertRaises(ValueError):
+            StarterProfile.fit(bursts, origins[:-1], targets, METADATA, PIXEL_MM)
+
+    def test_target_layout_is_thirteen_plus_five_and_disjoint(self):
         train = set(StarterSession.train_targets)
         check = set(StarterSession.check_targets)
-        self.assertEqual(len(train), 9)
+        self.assertEqual(len(train), 13)
         self.assertEqual(len(check), 5)
         self.assertFalse(train & check)
+
+    def test_superseded_setup_archive_starts_over(self):
+        with tempfile.TemporaryDirectory() as folder:
+            archive = Path(folder)/'session.json'
+            archive.write_text(json.dumps({'protocol': 'personal-arkit-starter-v1', 'display': BOUNDS.as_list(),
+                                           'train': [{'phase': 'train'}], 'check': []}), encoding='utf-8')
+            session = StarterSession.resume(BOUNDS, archive)
+            self.assertEqual((session.phase, session.index, session.train), ('train', 0, []))
 
     def test_setup_archive_with_wrong_protocol_fails_closed(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -138,22 +152,21 @@ class StarterTests(unittest.TestCase):
     def test_short_capture_resumes_and_keeps_five_checks_independent(self):
         with tempfile.TemporaryDirectory() as folder:
             archive = Path(folder)/'starter.json'
-            session = StarterSession(BOUNDS, archive)
+            session = StarterSession(BOUNDS, archive, PIXEL_MM)
             seq = 0
             stamp = 100.
 
             def collect(target):
                 nonlocal seq, stamp
                 self.assertEqual(session.target, target)
-                feature = feature_for(target)
+                feature, origins = reading(target, BOUNDS)
                 sample = None
                 advanced = False
                 for frame in range(36):
                     seq += 1
                     captured = stamp+1.+frame*.05
                     sample = SimpleNamespace(seq=seq, captured=captured, features=feature.copy(),
-                                             eye_origins=((0., 0., -.7), (.06, 0., -.7)),
-                                             error='', blink=False)
+                                             eye_origins=origins, error='', blink=False)
                     session.feed(sample, captured+.005)
                     if session.ready_to_confirm:
                         advanced = session.confirm(captured+.01)
@@ -169,7 +182,7 @@ class StarterTests(unittest.TestCase):
                     session = resumed
                 collect([fraction[0]*BOUNDS.w, fraction[1]*BOUNDS.h])
             self.assertEqual(session.phase, 'fit')
-            self.assertEqual(len(session.train), 9)
+            self.assertEqual(len(session.train), len(session.train_targets))
             candidate = session.fit()
             session.begin_check(candidate, stamp)
             for fraction in session.check_targets:
@@ -190,7 +203,8 @@ class StarterTests(unittest.TestCase):
             loaded = StarterSession.resume(BOUNDS, archive)
             self.assertEqual(loaded.phase, 'result')
             self.assertIsNotNone(loaded.candidate)
-            np.testing.assert_array_equal(loaded.candidate.predict(np.zeros(22)), candidate.predict(np.zeros(22)))
+            probe = feature_for([960, 540])
+            np.testing.assert_array_equal(loaded.candidate.predict(probe), candidate.predict(probe))
 
             candidate_path = archive.parent/'starter-candidates'/f'{loaded.candidate_key}.npz'
             candidate_path.write_bytes(b'corrupt')

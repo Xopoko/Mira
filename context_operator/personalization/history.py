@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .session import STARTER_PROTOCOL
+from .session import STARTER_PROTOCOL, SUPERSEDED_PROTOCOLS
 
 
 def _write(path, value):
@@ -23,7 +23,7 @@ def preserve_attempt(archive, report=None):
     raw = archive.read_bytes()
     try:
         collection = json.loads(raw)
-        if (not isinstance(collection, dict) or collection.get('protocol') != STARTER_PROTOCOL or
+        if (not isinstance(collection, dict) or collection.get('protocol') not in (STARTER_PROTOCOL, *SUPERSEDED_PROTOCOLS) or
                 not isinstance(collection.get('train'), list) or
                 not isinstance(collection.get('check'), list) or
                 not isinstance(collection.get('display'), list) or len(collection['display']) != 4):
@@ -43,7 +43,7 @@ def preserve_attempt(archive, report=None):
                'report': report or collection.get('report'), 'collection': collection}
     if not path.exists() or report is not None:
         _write(path, receipt)
-    if receipt['report'] is not None:
+    if receipt['report'] is not None and collection['protocol'] == STARTER_PROTOCOL:
         _write(archive.parent/'starter-last-result.json',
                {key: value for key, value in receipt.items() if key != 'collection'})
     return path
@@ -57,6 +57,8 @@ def latest_result(folder, bounds):
         report = data['report']
         if data['version'] != 1 or data['display'] != expected or not isinstance(report, dict):
             return None
+        if report.get('protocol') in SUPERSEDED_PROTOCOLS:
+            return None  # Measured with a model this version no longer uses.
         if not all(isinstance(report.get(key), (int, float)) and math.isfinite(report[key])
                    for key in ('median_px', 'p90_px', 'coverage')):
             return None

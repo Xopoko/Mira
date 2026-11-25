@@ -69,6 +69,22 @@ class SetupCanvas(QWidget):
         paint_progress(painter, QRectF((self.width()-15*total+7)/2, card_y+40, 0, 0), total, session.index)
 
 
+def pixel_pitch_mm(screens):
+    """Size of one physical pixel as Windows reports it, or None when a screen does not say."""
+    pitches = []
+    for screen in screens:
+        try:
+            pitch = screen.physicalSize().width()/(screen.geometry().width()*screen.devicePixelRatio())
+        except (AttributeError, TypeError, ZeroDivisionError):
+            return None
+        if not pitch > 0:
+            return None
+        pitches.append(pitch)
+    if not pitches or max(pitches) > min(pitches)*1.1:
+        return None  # Screens of different density share no single pixel size.
+    return float(np.median(pitches))
+
+
 class SetupWindow(QMainWindow):
     adopted = Signal()
 
@@ -90,10 +106,11 @@ class SetupWindow(QMainWindow):
         self.error = ''
         self._profile_available = None
         self.last_status_refresh = 0.
+        self.pixel_mm = pixel_pitch_mm(QApplication.screens())
         try:
-            self.session = StarterSession.resume(self.bounds, self.archive)
+            self.session = StarterSession.resume(self.bounds, self.archive, self.pixel_mm)
         except (OSError, ValueError, TypeError) as exc:
-            self.session = StarterSession(self.bounds, self.archive)
+            self.session = StarterSession(self.bounds, self.archive, self.pixel_mm)
             self.error = 'Couldn’t resume the saved setup: ' + str(exc)
         self.candidate = self.session.candidate
         self.setWindowTitle('Mira · Set up iPhone')
@@ -308,7 +325,7 @@ class SetupWindow(QMainWindow):
     def restart(self):
         if self.fit_worker and self.fit_worker.is_alive():
             return
-        replacement = StarterSession(self.bounds, self.archive)
+        replacement = StarterSession(self.bounds, self.archive, self.pixel_mm)
         try:
             preserve_attempt(self.archive, self.session.report)
             replacement._save()
@@ -389,7 +406,7 @@ class SetupWindow(QMainWindow):
             self.guide_heading.setText('Gaze setup ready' if usable else 'Gaze setup needs another try')
             self.guide_stats.setText(f"Typical error {report['median_px']:.0f} px\nHard points {report['p90_px']:.0f} px")
             kept = 'Mira kept your current gaze setup. ' if self._has_profile() else ''
-            self.guide_body.setText('Mira checked five new points with your head in one comfortable position. '
+            self.guide_body.setText('Mira checked five new points from the seat you used in setup. '
                                    'It works best for broad areas such as panels and large buttons, '
                                    'and clicking near where you look refines it as you use Mira.'
                                    if usable else '\n'.join(report.get('problems', [])) +
@@ -403,8 +420,10 @@ class SetupWindow(QMainWindow):
             self.guide_body.setText('Place your iPhone where the TrueDepth camera can see your face. Keep it still. '
                                    'Look at the center of each point. When the ring fills, press Space while still looking at the center. '
                                    'The point stays until you confirm.\n\n'
-                                   'Keep your head in a comfortable position. After 9 setup points, '
-                                   'Mira checks your gaze on 5 new points. '
+                                   'Sit the way you usually do and look at each point naturally; '
+                                   'turning your head is fine. '
+                                   f'After {len(self.session.train_targets)} setup points, '
+                                   f'Mira checks your gaze on {len(self.session.check_targets)} new points. '
                                    'Control is paused during setup.')
         self.heading.setText('Check your gaze' if phase == 'check' else
                              'Setup result' if phase == 'result' else

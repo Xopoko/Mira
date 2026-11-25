@@ -70,6 +70,17 @@ are supported and whose predictions are on screen. Inspect coverage, error, and
 jitter for each held-out target. Keep the five check targets out of training and
 parameter selection.
 
+To judge a change to the gaze model, replay the saved attempts before running a
+new setup:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\evaluate_gaze_setup.py
+```
+
+It fits each attempt's setup points with the current model and prints the error
+on that attempt's check points next to the error recorded at the time. Pass a
+folder to replay attempts kept elsewhere.
+
 ## Feature guides
 
 - [iPhone Wi-Fi](phone-wifi.md) and [webcam fallback](webcam.md)

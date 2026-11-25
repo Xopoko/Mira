@@ -401,7 +401,7 @@ class Window(QMainWindow):
         box.addSpacing(4)
         steps=QHBoxLayout();steps.setSpacing(12)
         for number,title,hint in (
-            ('1','Connect','Sit comfortably'),('2','Gaze setup','9 points, about a minute'),('3','Check','5 new points'),
+            ('1','Connect','Sit comfortably'),('2','Gaze setup','13 points, about a minute'),('3','Check','5 new points'),
         ):
             step=QHBoxLayout();step.setSpacing(9);step.setAlignment(Qt.AlignTop)
             number_label=label(number,'step');number_label.setFixedSize(22,22);number_label.setAlignment(Qt.AlignCenter)
@@ -998,8 +998,8 @@ class Window(QMainWindow):
             self._profile_status['last_result']=latest_result(LOCAL,bounds)
         state=self._profile_status;available=state.get('available',False)
         self.profile_title.setText('Gaze setup ready' if available else 'Set up your gaze profile')
-        self.profile_detail.setText('Mira checked five new points in one seated position. Repeat setup if you change how you sit.' if available else
-            'Sit comfortably for 9 setup points and 5 new check points.')
+        self.profile_detail.setText('Mira checked five new points from your usual seat. Repeat setup if you move the iPhone or the screen.' if available else
+            'Sit the way you usually do for 13 setup points and 5 new check points.')
         self.profile_setup.setText('Refine setup · about a minute' if available else 'Set up · about a minute')
         report=(state.get('report') if available else state.get('last_result')) or {}
         self.validation_panel.setVisible(bool(report))

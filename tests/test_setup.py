@@ -1,6 +1,7 @@
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,7 +19,8 @@ from context_operator.providers.gaze import PhoneGaze
 from context_operator.personalization.session import MIN_DURATION, MIN_FRAMES
 from context_operator.ui.setup import SetupCanvas, SetupWindow, open_setup
 from context_operator.ui.webcam_setup import open_webcam_setup
-from test_starter import feature_for, starter_profile
+from gaze_fixture import reading
+from test_starter import starter_profile
 
 
 APP = QApplication.instance() or QApplication([])
@@ -44,7 +46,7 @@ class DirectModel:
 
 def accepted_report():
     return {'passed': False, 'usable': True, 'quality': 'starter', 'scope': 'starter-independent-targets',
-            'train_targets': 9, 'check_targets': 5,
+            'train_targets': len(StarterSession.train_targets), 'check_targets': 5,
             'median_px': 42., 'p90_px': 93., 'coverage': 1.}
 
 
@@ -193,6 +195,16 @@ class SetupTests(unittest.TestCase):
         self.assertFalse(status['report']['passed'])
         store.profile_backup.write_bytes(b'broken too')
         self.assertFalse(store.status(BOUNDS)['available'])
+
+    def test_first_profile_of_the_new_model_keeps_the_earlier_pair(self):
+        store = ProfileStore(self.folder)
+        store.profile_path.write_bytes(b'earlier model')
+        store.receipt_path.write_text(json.dumps({'protocol': 'personal-arkit-starter-v1'}), encoding='utf-8')
+        self.assertIn('Run it again', store.status(BOUNDS)['reason'])
+        store.adopt(starter_profile(), accepted_report(), BOUNDS)
+        self.assertEqual(store.profile_superseded.read_bytes(), b'earlier model')
+        self.assertIn('starter-v1', store.receipt_superseded.read_text(encoding='utf-8'))
+        self.assertTrue(store.status(BOUNDS)['available'])
 
     def test_activation_failure_rolls_back_profile(self):
         store = ProfileStore(self.folder)
@@ -392,7 +404,7 @@ class SetupTests(unittest.TestCase):
                 seq += 1
                 current = stamp + 1. + frame/hz
                 observation = sample(seq, current, target, depth)
-                observation.features = feature_for(target)
+                observation.features, observation.eye_origins = reading(target, BOUNDS)
                 session.feed(observation, current+.002)
                 if session.ready_to_confirm:
                     advanced = session.confirm(current+.003)

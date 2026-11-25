@@ -4,7 +4,7 @@
 iPhone TrueDepth: eye and head measurements (numbers, timestamped)
         │  pulled by the PC over Wi-Fi or USB
         ▼
-gaze setup: 9 training targets → model → 5 separate check targets → accepted profile
+gaze setup: 13 training targets → model → 5 separate check targets → accepted profile
         │
         ▼
 estimated screen point and search radius  ←  optional corrections learned from clicks
@@ -51,26 +51,43 @@ Child processes are started with `CREATE_NO_WINDOW`.
 
 ## Gaze setup and the profile
 
-`personalization/session.py` collects nine labeled fixations for training and
-five at other screen positions for checking, all in one seated position. A
+`personalization/session.py` collects thirteen labeled fixations for training
+and five at other screen positions for checking, all from one seat. A
 sample is 22 numbers from ARKit: eye directions, head pose and 3D eye origins.
 It needs no camera image. A target counts after a steady fixation of at least
 12 fresh frames over 0.65 s, confirmed with Space. Stale, duplicate and blink
 frames do not advance collection.
 
-The model in `personalization/model.py` intersects each eye ray with the
-camera's `z=0` plane, averages the two intersections and maps the result to
-desktop pixels with an affine transform. The five check targets, which the fit
-never sees, give the median and 90th-percentile error, jitter and coverage. A
-setup within the limits is `usable` and can be adopted. `passed` stays false
-for every setup: five points show that it is usable, not that it is accurate.
-The errors are in pixels. They say nothing about angular accuracy, which would
-need the physical size and position of the screen.
+The model in `personalization/geometry.py` and `model.py` treats the screen as
+a plane in the iPhone camera's space. A reading becomes a gaze ray that starts
+between the eyes and points where the head points, turned by the eye rotation.
+ARKit reports larger eye rotations than the eye makes, so the eye part is
+scaled down first: by about 0.65 sideways and 0.85 up and down, and setup may
+move these a little. The fit then finds the position and tilt of the plane
+that sends the thirteen rays to their targets. The pixel size comes from the
+physical size the monitor reports to Windows, and the fit estimates it when
+Windows does not know. Nothing asks where the iPhone stands.
 
-While tracking, an observation is supported only if its head position, head
-rotation and eye direction all agree with the same training fixation, within
-fixed tolerances. Otherwise Mira shows no gaze point and reports that the
-position is outside the setup range.
+Head and eyes are kept apart, so a target reached by turning the head and the
+same target reached with the eyes alone map to the same pixel. When the screen
+size is known the mapping also holds as the head moves. One seat cannot tell a
+large far screen from a small near one, so a fitted size is trusted only within
+8 cm of the setup positions. Several monitors are treated as one flat surface
+with one pixel size, which is less accurate where they meet at an angle.
+
+The five check targets, which the fit never sees, give the median and
+90th-percentile error, jitter and coverage. A setup within the limits is
+`usable` and can be adopted. `passed` stays false for every setup: five points
+show that it is usable, not that it is accurate. Seven recorded setups from one
+49-inch 5120×1440 screen, replayed with `scripts/evaluate_gaze_setup.py`, give
+a typical check error of 130–310 px, 190 px on average, where the affine map
+Mira used before gave 370 px. That is close to the 3° that published
+measurements of ARKit gaze report.
+
+While tracking, an observation is supported when the head is within 20 cm of a
+head position seen in setup, 8 cm when the screen size was fitted, and turned
+about as far as it was there. Otherwise Mira shows no gaze point and reports
+that the position is outside the setup range.
 
 `personalization/store.py` saves the accepted model and its report as a pair
 and keeps the previous pair as a backup. It reads back what it wrote and

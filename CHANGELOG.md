@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Make gaze setup about twice as accurate. Mira now works out where the screen
+  is in space from the setup points and treats head and eye movement
+  separately, so looking at a point with your eyes and turning your head
+  toward it give the same result, and shifting in your seat matters less. On
+  seven saved setups from one 5120×1440 screen, replayed through the new model,
+  the typical error fell from 370 px to 190 px. Setup uses thirteen points in
+  place of nine, reaches the edges of the screen, and reads the monitor size
+  from Windows. Earlier gaze setups need to be run again.
 - Redesign the Windows app as a dark companion app. **Overview** now leads
   with a live preview of your screen beside the iPhone, accuracy and quick
   settings. **Profile** is now **Calibration**, the highlight settings moved

@@ -11,7 +11,8 @@ import numpy as np
 from ..foundations.gaze.arkit import ENGINE_VERSION
 
 
-STARTER_PROTOCOL = 'personal-arkit-starter-v1'
+STARTER_PROTOCOL = 'personal-arkit-starter-v2'
+SUPERSEDED_PROTOCOLS = ('personal-arkit-starter-v1',)
 MIN_FRAMES = 12
 MIN_DURATION = .65
 SETTLE_SECONDS = .85
@@ -30,16 +31,21 @@ def _target(bounds, fraction):
 
 
 class StarterSession:
-    """One comfortable head position, nine fit targets and five fresh checks."""
+    """One comfortable seat, thirteen fit targets and five fresh checks."""
 
     protocol = STARTER_PROTOCOL
-    train_targets = tuple((x, y) for y in (.14, .45, .86) for x in (.14, .45, .86))
-    check_targets = ((.08, .10), (.92, .10), (.08, .90), (.92, .90), (.61, .39))
+    # Rows from the top; the edges are included because a screen plane fitted
+    # only to the middle has to guess toward the sides.
+    train_targets = ((.10, .12), (.50, .12), (.90, .12), (.30, .31), (.70, .31),
+                     (.10, .50), (.50, .50), (.90, .50), (.30, .69), (.70, .69),
+                     (.10, .88), (.50, .88), (.90, .88))
+    check_targets = ((.20, .21), (.50, .31), (.80, .40), (.60, .79), (.20, .60))
     result_scope = 'starter-independent-targets'
 
-    def __init__(self, bounds, archive=None):
+    def __init__(self, bounds, archive=None, pixel_mm=None):
         self.bounds = _bounds(bounds)
         self.archive = Path(archive) if archive else None
+        self.pixel_mm = pixel_mm
         self.train = []
         self.check = []
         self.phase = 'train'
@@ -74,6 +80,8 @@ class StarterSession:
         self.archive.parent.mkdir(parents=True, exist_ok=True)
         payload = {'protocol': self.protocol, 'display': self.bounds.tolist(),
                    'train': self.train, 'check': self.check}
+        if self.pixel_mm is not None:
+            payload['pixel_mm'] = self.pixel_mm
         if self.report is not None:
             payload['report'] = self.report
         if self.candidate_key:
@@ -83,11 +91,16 @@ class StarterSession:
         os.replace(temporary, self.archive)
 
     @classmethod
-    def resume(cls, bounds, archive):
-        session = cls(bounds, archive)
+    def resume(cls, bounds, archive, pixel_mm=None):
+        session = cls(bounds, archive, pixel_mm)
         if not session.archive.is_file():
             return session
         data = json.loads(session.archive.read_text(encoding='utf-8'))
+        if isinstance(data, dict) and data.get('protocol') in SUPERSEDED_PROTOCOLS:
+            # An earlier layout cannot continue; keep what it collected in the history.
+            from .history import preserve_attempt
+            preserve_attempt(session.archive)
+            return session
         if not isinstance(data, dict) or data.get('protocol') != session.protocol or data.get('display') != session.bounds.tolist():
             raise ValueError('Saved setup belongs to another screen or protocol')
         for phase, positions in (('train', session.train_targets), ('check', session.check_targets)):
@@ -275,10 +288,11 @@ class StarterSession:
             raise ValueError('Training is incomplete')
         from .model import StarterProfile
         bursts = [np.asarray(row['features'], dtype=float) for row in self.train]
+        origins = [np.asarray(row['eye_origins'], dtype=float) for row in self.train]
         targets = [row['target'] for row in self.train]
         metadata = {'display': self.bounds.tolist(), 'engine': ENGINE_VERSION,
                     'features': 22, 'protocol': self.protocol}
-        return StarterProfile.fit(bursts, targets, metadata)
+        return StarterProfile.fit(bursts, origins, targets, metadata, self.pixel_mm)
 
     def evaluate(self):
         if not self.complete or self.candidate is None or len(self.check) != len(self.check_targets):

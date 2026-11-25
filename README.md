@@ -51,9 +51,12 @@ highlight moves before you connect an iPhone.
    Mira looks for your phone automatically over Wi-Fi. If it can’t find it,
    close setup and select **Connection settings** in **Overview**.
    [Manual connection](docs/phone-wifi.md#enter-the-address-manually)
-3. Select **Start setup**. Look at each of the nine targets and press **Space**
-   when its ring fills. Select **Check on new points**, do the same for five
-   more targets, then select **Use gaze setup** if offered.
+3. Select **Start setup**. Look at each of the thirteen targets and press
+   **Space** when its ring fills. Sit the way you usually do; turning your head
+   toward a target is fine. Select **Check on new points**, do the same for
+   five more targets, then select **Use gaze setup** if offered. Mira works out
+   where the screen is from these points, so you don’t enter the monitor size
+   or the phone’s position.
 4. Back in **Overview**, select **Connect iPhone**. Once gaze tracking is
    live, **Live preview** shows a miniature of your screen with the same
    highlight. Select **Open Practice**. In the default **Follow gaze** mode,

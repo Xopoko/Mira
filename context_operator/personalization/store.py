@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 
 from ..settings import LOCAL
-from .session import STARTER_PROTOCOL
+from .session import STARTER_PROTOCOL, SUPERSEDED_PROTOCOLS, StarterSession
 from .model import StarterProfile
 
 
@@ -31,7 +31,8 @@ def _accepted_report(protocol, report):
             report.get('quality') == 'starter' and report.get('usable') is True and
             report.get('passed') is False and
             report.get('scope') == 'starter-independent-targets' and
-            report.get('train_targets') == 9 and report.get('check_targets') == 5)
+            report.get('train_targets') == len(StarterSession.train_targets) and
+            report.get('check_targets') == len(StarterSession.check_targets))
 
 
 class ProfileUnavailable(RuntimeError):
@@ -45,6 +46,8 @@ class ProfileStore:
         self.receipt_path = self.folder/'personal-profile.json'
         self.profile_backup = self.folder/'gaze-personal.bak.npz'
         self.receipt_backup = self.folder/'personal-profile.bak.json'
+        self.profile_superseded = self.folder/'gaze-personal.superseded.npz'
+        self.receipt_superseded = self.folder/'personal-profile.superseded.json'
 
     @staticmethod
     def _verified(profile_path, receipt_path, display):
@@ -88,11 +91,19 @@ class ProfileStore:
             except (OSError, ValueError, KeyError, TypeError, AttributeError,
                     EOFError, zipfile.BadZipFile, UnicodeError):
                 continue
-        reason = ('Your gaze profile is damaged or uses a different screen' if
+        reason = ('Gaze setup is more accurate now. Run it again.' if self._superseded() else
+                  'Your gaze profile is damaged or uses a different screen' if
                   self.profile_path.exists() or self.receipt_path.exists() else
                   'Set up your gaze first')
         return None, {'available': False, 'reason': reason, 'path': None,
                       'profile_key': None, 'quality': None, 'report': None}
+
+    def _superseded(self):
+        try:
+            receipt = json.loads(self.receipt_path.read_text(encoding='utf-8'))
+            return receipt.get('protocol') in SUPERSEDED_PROTOCOLS
+        except (OSError, ValueError, AttributeError):
+            return False
 
     def status(self, bounds):
         _, status = self._read(bounds)
@@ -144,6 +155,10 @@ class ProfileStore:
             if incumbent['available'] and incumbent['path'] == self.profile_path:
                 self._atomic_bytes(self.profile_backup, old_profile)
                 self._atomic_bytes(self.receipt_backup, old_receipt)
+            elif old_profile is not None and self._superseded():
+                # This version cannot load the earlier pair; keep it beside the new one.
+                self._atomic_bytes(self.profile_superseded, old_profile)
+                self._atomic_bytes(self.receipt_superseded, old_receipt)
             os.replace(staged, self.profile_path)
             os.replace(receipt_stage, self.receipt_path)
             self._verified(self.profile_path, self.receipt_path, display)
