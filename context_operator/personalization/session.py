@@ -31,6 +31,12 @@ def _target(bounds, fraction):
     return (bounds[:2] + bounds[2:] * fraction).tolist()
 
 
+def usability_limits(screen_height):
+    """What the check points may show for a setup to count as usable."""
+    return {'median_px': min(400., screen_height*.28), 'p90_px': min(700., screen_height*.50),
+            'jitter_px': min(150., screen_height*.11), 'coverage': .80}
+
+
 class StarterSession:
     """One comfortable seat, thirteen fit targets and five fresh checks."""
 
@@ -331,21 +337,19 @@ class StarterSession:
         all_errors = np.concatenate(frame_error_batches)
         coverage = np.asarray([r['coverage'] for r in rows])
         jitter = np.asarray([r['jitter_px'] for r in rows])
-        limit_median = min(400., b[3]*.28)
-        limit_p90 = min(700., b[3]*.50)
-        limit_jitter = min(150., b[3]*.11)
+        limits = usability_limits(b[3])
+        limit_median, limit_p90, limit_jitter = limits['median_px'], limits['p90_px'], limits['jitter_px']
         report = {'protocol': self.protocol, 'scope': self.result_scope,
                   'train_targets': len(self.train_targets), 'check_targets': len(rows),
                   'median_px': float(np.median(all_errors)), 'p90_px': float(np.percentile(all_errors, 90)),
                   'bias_px': np.median([r['bias'] for r in rows], axis=0).tolist(),
                   'jitter_px': float(np.median(jitter)), 'coverage': float(np.mean(coverage)),
-                  'targets': rows, 'limits': {'median_px': limit_median, 'p90_px': limit_p90,
-                                              'jitter_px': limit_jitter, 'coverage': .80},
+                  'targets': rows, 'limits': limits,
                   'quality': 'starter', 'passed': False}
+        # The reported jitter is the median over the points, so the per-point limit covers it.
         report['usable'] = bool(report['median_px'] <= limit_median and
                                 report['p90_px'] <= limit_p90 and
-                                report['jitter_px'] <= limit_jitter and
-                                all(row['coverage'] >= .80 for row in report['targets']) and
+                                all(row['coverage'] >= limits['coverage'] for row in report['targets']) and
                                 all(row['p90_px'] <= limit_p90 for row in report['targets']) and
                                 all(row['jitter_px'] <= limit_jitter for row in report['targets']))
         problems = []
