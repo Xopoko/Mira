@@ -4,7 +4,7 @@ Use Python 3.11 on Windows and set up an iPhone gaze profile in Mira first.
 Then launch the runner from the repository root.
 
 ```powershell
-.\.venv\Scripts\python.exe scriptsun_game_gaze.pyw
+.\.venv\Scripts\python.exe scripts\run_game_gaze.pyw
 ```
 
 Select **Connect gaze** to start the saved iPhone transport and the
