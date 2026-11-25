@@ -137,7 +137,6 @@ class HardCorrectionTests(unittest.TestCase):
         self.assertTrue(self.m.learn_click(s,(25,72)))
         self.assertEqual(self.m.click_anchors[0]['count'],3)
         self.assertEqual(len(self.m.rows),1)
-        self.assertEqual(self.m.rows[0]['source'],'physical-click')
 
     def test_unsupported_and_far_clicks_do_not_learn_or_shift_unknown_pose(self):
         s=sample(10,point=(2500,-200),supported=False)
@@ -194,8 +193,7 @@ class NetworkAcceptanceTests(unittest.TestCase):
             base=[target[0]+100,target[1]]
             clicks.append(dict(features=features,target=target,offset=[-100,0],count=3,revision=area+1))
             for _ in range(8):
-                rows.append(dict(features=features,target=target,base=base,baseline=base,
-                                 supported=True,source='physical-click',weight=1.))
+                rows.append(dict(features=features,target=target,base=base,baseline=base,weight=1.))
         field=dict(clicks=clicks,scale=[1.]*22,bounds=bounds)
         fake=SimpleNamespace(predict=lambda x:np.zeros(2),data={})
         with patch('context_operator.providers.personal_model.fit_network',return_value=fake):

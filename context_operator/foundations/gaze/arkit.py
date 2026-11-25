@@ -1,4 +1,4 @@
-"""Read numeric ARKit snapshots over an injected or USB connector."""
+"""Read numeric ARKit snapshots from the iPhone over an open phone connection."""
 from dataclasses import dataclass
 import importlib.util
 import json
@@ -135,11 +135,8 @@ class Sample:
 
 
 class ARKitWorker(threading.Thread):
-    def __init__(self, port=None, connection=None):
+    def __init__(self, connection):
         super().__init__(daemon=True, name='arkit-numeric')
-        if port is not None and connection is not None:
-            raise ValueError('Choose a fixture port or a phone connection')
-        self.port = port
         self.connection = connection
         self.stop_event = threading.Event()
         self.lock = threading.Lock()
@@ -156,16 +153,9 @@ class ARKitWorker(threading.Thread):
         sock = None
         previous = None
         buffer = b''
-        started = time.monotonic()
         try:
-            # Explicit local port is only for the receiver integration fixture.
-            if self.connection is not None and self.connection.transport == 'wifi':
-                sock = self.connection.open(stop_event=self.stop_event)
-                started = time.monotonic()
-            else:
-                sock = (self.connection.open() if self.connection is not None else
-                        open_usb_stream() if self.port is None else
-                        socket.create_connection(('127.0.0.1',self.port),timeout=2))
+            sock = self.connection.open(stop_event=self.stop_event)
+            started = time.monotonic()  # Finding the phone on Wi-Fi is not time spent waiting for frames.
             sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             sock.settimeout(.4)
             while not self.stop_event.is_set():

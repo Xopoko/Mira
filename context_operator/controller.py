@@ -30,7 +30,7 @@ class Controller(QObject):
     received_speech=Signal(object,int)
     received_decision=Signal(object,object,int,float,int)
     failed=Signal(str,int)
-    received_output=Signal(object,object,str,int,float)
+    received_output=Signal(object,object,str,int)
 
     def __init__(self,settings,*,output=None,screen_factory=ScreenProvider,model_factory=ContextModel,click_source=None,game_gaze_factory=None,webcam_factory=None):
         super().__init__()
@@ -65,7 +65,7 @@ class Controller(QObject):
         self.phone_error='';self.phone_needs_setup=False
         self._reported_wifi_connection=None
         self.voice_status='Off';self.voice_state='off';self.voice_fallback=''
-        self.last_action='No actions yet';self.last_transcript=''
+        self.last_transcript=''
         self.action_confirmation: tuple[str, float] | None = None
         self.speech_focus={};self.dwell_id=None;self.dwell_since=0.;self.dwell_fired=None
         self.received_scene.connect(self._scene)
@@ -338,7 +338,7 @@ class Controller(QObject):
     def _start_clicks(self):
         teach=(self.phone and self.learning.key is not None
                 and self.settings.get('click_learning',True))
-        if self.running and (teach or self.settings.get('anticipation',False)):
+        if self.running and (teach or self.settings['anticipation']):
             self.clicks.start()
             if teach:self.click_status='Learning from clicks near where you just looked'
 
@@ -363,7 +363,7 @@ class Controller(QObject):
     def _predict_intention(self,events,now):
         motions=self.clicks.drain_motion()
         self.prediction=None
-        if not self.settings.get('anticipation',False):return
+        if not self.settings['anticipation']:return
         stream=sorted([*motions,*events],key=lambda e:e.captured if isinstance(e,PointerMotion) else e.released)
         for event in stream:
             if isinstance(event,PointerMotion):self.anticipation.observe(event)
@@ -373,17 +373,16 @@ class Controller(QObject):
                    measurement.supported and 0<=now-measurement.captured<GAZE_TTL)
         self.prediction=self.anticipation.predict(self.scene,self.gaze,now,gaze_supported=supported)
 
-    def _learn_clicks(self,measurement,now,events=None):
-        if events is None:events=self.clicks.drain()
+    def _learn_clicks(self,measurement,now,events):
         if self.pointer_mode:
             self.click_history.clear()
-            return False
+            return
         if (not self.phone or self.learning.key is None
                 or not self.settings.get('click_learning',True)):
             self.click_status=('Click learning is off' if not self.settings.get('click_learning',True) else
                                'Connect iPhone to start learning from clicks' if not self.phone else
                                'Complete the short gaze setup to start click learning')
-            self.click_history.clear();return False
+            self.click_history.clear();return
         self.click_history.observe(measurement,now,self.phone.invalid_captured)
         if self.clicks.error:self.click_status='Can’t read clicks: '+self.clicks.error
         # Gate against the uncorrected source and its real display radius. The
@@ -410,11 +409,10 @@ class Controller(QObject):
                     }.get(result,'the gaze reading wasn’t usable')
             except OSError as exc:
                 self.settings['click_learning']=False;self.click_history.clear()
-                if not self.settings.get('anticipation',False):self.clicks.stop()
+                if not self.settings['anticipation']:self.clicks.stop()
                 self.click_status='Click learning stopped because Mira couldn’t save the correction'
                 self.message.emit('Click learning',str(exc));break
         if changed:self.fusion.reset();self.dwell_id=None
-        return changed
 
     def undo_learning(self):
         try:self.learning.undo_last()
@@ -514,7 +512,7 @@ class Controller(QObject):
         if extras:
             scene=replace(scene,elements=scene.elements+tuple(extras),windows=tuple(replace(w,elements=w.elements+tuple(e for e in extras if e.window==w.window)) for w in scene.windows))
         self.scene=scene
-        if self.settings.get('anticipation',False):self.anticipation.observe_scene(scene,time.monotonic())
+        if self.settings['anticipation']:self.anticipation.observe_scene(scene,time.monotonic())
         if not self.busy:
             error=self.scene_provider.last_error if self.scene_provider is not None else ''
             if not scene.elements and error:self.status='Can’t read screen elements ('+error+')'
@@ -766,11 +764,11 @@ class Controller(QObject):
                 if generation!=self.generation or not self.running or dispatch_epoch!=self.gaze_source_epoch:raise RuntimeError('Control or its input source changed before Mira could send the action')
                 if isinstance(self.output,WindowsOutput):self.output.set_guard(lambda:generation==self.generation and self.running and dispatch_epoch==self.gaze_source_epoch)
                 outcome=self.output.execute(intent,target,current)
-                self.received_output.emit(outcome,intent,'',generation,started)
-            except Exception as exc:self.received_output.emit(None,intent,str(exc),generation,started)
+                self.received_output.emit(outcome,intent,'',generation)
+            except Exception as exc:self.received_output.emit(None,intent,str(exc),generation)
         threading.Thread(target=dispatch,daemon=True,name='windows-output').start()
 
-    def _output(self,outcome,intent,error,generation,started):
+    def _output(self,outcome,intent,error,generation):
         late=generation!=self.generation
         self.busy=False;self.output_pending=False
         # A failed native dispatch can be partial too: no target survives for automatic replay.
@@ -783,12 +781,11 @@ class Controller(QObject):
                       'right_click': 'Right-click', 'scroll': 'Scroll',
                       'type_text': 'Text', 'press_keys': 'Keys', 'move': 'Pointer move'}
             action=labels.get(intent.action,intent.action)
-            self.last_action=f'Sent to Windows · {action} · {outcome["target"]}'
+            self.status=f'Sent to Windows · {action} · {outcome["target"]}'
             if not late:
                 self.action_confirmation=(f'{action} sent to Windows',completed_at)
-            self.status=self.last_action
             title = 'Windows reported the action after control stopped' if late else 'Action'
-            self.message.emit(title,self.last_action)
+            self.message.emit(title,self.status)
             self.history.append({'request':self.last_transcript,'action':intent.action,'target':outcome['target']})
         else:
             error = error or 'Mira couldn’t confirm whether Windows received the action.'

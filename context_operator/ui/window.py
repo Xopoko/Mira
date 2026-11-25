@@ -1191,8 +1191,7 @@ class Window(QMainWindow):
     def refresh_learning(self, phone_state):
         c=self.c
         self.click_hint.setText(c.click_status)
-        progress=c.learning.click_progress
-        learned=progress['accepted']
+        learned=c.learning.click_accepted
         if not self.settings.get('click_learning',True):
             click_status='Click learning is off.'
         elif learned:
@@ -1203,7 +1202,7 @@ class Window(QMainWindow):
         else:
             click_status='Mira learns from your clicks once iPhone is connected.'
         self.click_plain_status.setText(click_status)
-        self.learning_value.setText(f'Clicks used to refine gaze: {progress["accepted"]}' if c.learning.key is not None else 'Corrections load with your gaze profile.')
+        self.learning_value.setText(f'Clicks used to refine gaze: {learned}' if c.learning.key is not None else 'Corrections load with your gaze profile.')
         counts=c.click_counts
         self.click_summary.setText(f'This session · used {counts["accepted"]} of {counts["seen"]} · gaze elsewhere {counts["away"]} · too little data {counts["quality"]}')
         self.learning_model.setText(c.learning.model_status if c.learning.key is not None else 'Connect a working gaze profile to refine it.')

@@ -36,16 +36,13 @@ class PhoneTransportTests(unittest.TestCase):
                      '192.168.1.1:39472','https://192.168.1.1','192.168.001.2','::1'):
             with self.subTest(host=host),self.assertRaises(ValueError):PhoneConnection('wifi',host)
 
-    def test_usb_default_retains_exact_binding_owner_and_wifi_never_falls_back(self):
-        with patch('context_operator.foundations.gaze.arkit.open_usb_stream') as usb:
-            self.assertIs(PhoneConnection.from_settings({}).open(),usb.return_value)
-            usb.assert_called_once()
+    def test_wifi_never_falls_back_to_usb(self):
         with patch('context_operator.foundations.gaze.arkit.open_usb_stream') as usb, \
              patch('context_operator.providers.phone_connection.find_phones',return_value=[]) as discover, \
              patch('context_operator.providers.phone_connection.socket.create_connection',side_effect=OSError('private details')):
             with self.assertRaises(WifiPhoneNotFound) as error:PhoneConnection('wifi','192.168.2.42').open()
             self.assertEqual(str(error.exception),f'Can’t find iPhone on your Wi‑Fi. {WIFI_PHONE_NEXT_STEP}')
-            discover.assert_called_once_with();usb.assert_not_called()
+            discover.assert_called_once_with(stop_event=None);usb.assert_not_called()
 
     def test_usb_uses_the_explicit_adapter_path(self):
         variable = 'MIRA_IPHONE_USB_BRIDGE'
@@ -100,14 +97,15 @@ class PhoneTransportTests(unittest.TestCase):
         with patch('context_operator.providers.phone_connection.find_phones',return_value=['192.168.2.42']) as discover, \
              patch('context_operator.providers.phone_connection.socket.create_connection') as connect:
             self.assertIs(connection.open(),connect.return_value)
-            discover.assert_called_once_with()
+            discover.assert_called_once_with(stop_event=None)
             connect.assert_called_once_with(('192.168.2.42',WIFI_PORT),timeout=2)
         self.assertEqual(connection.found_host,'192.168.2.42')
 
     def run_fixture(self,serve):
         listener=socket.socket();listener.bind(('127.0.0.1',0));listener.listen(1)
         self.addCleanup(listener.close)
-        worker=ARKitWorker(port=listener.getsockname()[1])
+        connection=Mock();connection.open.side_effect=lambda **_:socket.create_connection(listener.getsockname(),timeout=2)
+        worker=ARKitWorker(connection)
         errors=[]
         def handle():
             try:

@@ -76,10 +76,6 @@ class GazeLearning:
         return gaze
     def field_state(self):
         return dict(clicks=self.click_anchors,scale=self.feature_scale.tolist(),bounds=self.bounds.as_list())
-    @property
-    def click_progress(self):
-        return dict(accepted=self.click_accepted,
-                    anchors=len(self.click_anchors),total_corrections=self.count)
     def _rebase_promoted_clicks(self):
         """Retain only click correction added after the promoted network's fit."""
         through=int(self.trainer.model.data.get('through_count',0))
@@ -158,7 +154,7 @@ class GazeLearning:
                 self._rebase_promoted_clicks()
             self.rows=(self.rows+[dict(features=x.tolist(),target=target.tolist(),base=point.tolist(),
                                       baseline=(baseline if baseline is not None else point).tolist(),
-                                      supported=True,source='physical-click',weight=float(weight))])[-1200:]
+                                      weight=float(weight))])[-1200:]
         self.count+=1;self.click_accepted+=1
         try:self.save()
         except OSError:
@@ -183,13 +179,12 @@ class GazeLearning:
     @property
     def model_status(self):return self.trainer.status(self.rows,self.bounds.as_list() if self.bounds else None)
     def undo_last(self):
-        if self.undo:
-            previous=self._snapshot()
-            self._restore(self.undo[-1])
-            try:self.save()
-            except OSError:
-                self._restore(previous)
-                raise
-            self.undo.pop()
-        else:self.trainer.restore(self.trainer.state())
+        if not self.undo:return
+        previous=self._snapshot()
+        self._restore(self.undo[-1])
+        try:self.save()
+        except OSError:
+            self._restore(previous)
+            raise
+        self.undo.pop()
         self.smoother.reset()

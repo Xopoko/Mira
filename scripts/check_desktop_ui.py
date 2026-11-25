@@ -96,13 +96,13 @@ with patch('context_operator.ui.window.time.monotonic',return_value=100.):
     assert window.sources['Microphone'][0].state=='hold'
     assert window.voice_value.text()=='Error · Recognition failed'
     window.last_paint=0
-    c._output({'target':'Plus'},Intent('click'),'',c.generation,99.9)
+    c._output({'target':'Plus'},Intent('click'),'',c.generation)
     assert window.target.text()=='Click sent to Windows'
 with patch('context_operator.ui.window.time.monotonic',return_value=103.):
     window.last_paint=0;window.refresh()
     assert window.target.text()=='Mira is running'
     window.last_paint=0
-    c._output(None,Intent('click'),'Test dispatch error',c.generation,102.9)
+    c._output(None,Intent('click'),'Test dispatch error',c.generation)
     assert window.target.text()=='Mira is running'
 c.pause()
 window.last_paint=0;window.refresh()

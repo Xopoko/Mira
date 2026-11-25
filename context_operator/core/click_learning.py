@@ -30,7 +30,6 @@ class PointerMotion:
 @dataclass(frozen=True)
 class ClickMatch:
     sample: GazeMeasurement
-    distance: float
     limit: float
     weight: float
 
@@ -116,4 +115,4 @@ class ClickHistory:
         # Use the observed sample nearest the robust fixation center.
         sample=min(stable,key=lambda item:(math.dist(item[1].point,center),-item[0]))[1]
         weight=max(.15,1-.75*distance/limit)*max(.25,1-dispersion/100)
-        return ClickMatch(sample,distance,limit,weight)
+        return ClickMatch(sample,limit,weight)

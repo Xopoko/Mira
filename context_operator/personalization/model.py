@@ -35,7 +35,7 @@ class StarterProfile:
     ROTATION_TOLERANCE = .6
     # Reach of one fixation's leftover error, as a share of the screen height.
     CORRECTION_REACH = .5
-    ARRAYS = ('mean', 'scale', 'training_x', 'training_y', 'frame', 'center', 'eye_offsets', 'gains',
+    ARRAYS = ('scale', 'training_x', 'training_y', 'frame', 'center', 'eye_offsets', 'gains',
               'landed', 'correction')
 
     def __init__(self, arrays, metadata, settings):
@@ -48,7 +48,7 @@ class StarterProfile:
             reach = float(settings['correction_reach_px'])
             valid = (settings.get('model_kind') == self.MODEL_KIND and
                      metadata.get('protocol') == STARTER_PROTOCOL and metadata.get('features') == 22 and
-                     arrays['mean'].shape == (22,) and arrays['scale'].shape == (22,) and
+                     arrays['scale'].shape == (22,) and
                      training_x.ndim == 2 and training_x.shape[1:] == (22,) and
                      len(training_x) >= self.MIN_TARGETS and training_y.shape == (len(training_x), 2) and
                      frame.shape == (3, 3) and arrays['center'].shape == (3,) and
@@ -99,14 +99,14 @@ class StarterProfile:
         floors[4:7] = .02
         floors[7:13] = .05
         floors[13:19] = .08
-        arrays = {'mean': medians.mean(axis=0), 'scale': np.maximum(medians.std(axis=0), floors),
+        arrays = {'scale': np.maximum(medians.std(axis=0), floors),
                   'training_x': medians, 'training_y': y, 'frame': screen['frame'],
                   'center': screen['center'], 'eye_offsets': screen['eye_offsets'],
                   'gains': np.asarray(screen['gains'], dtype=float),
                   'landed': landed, 'correction': correction}
         settings = {'version': cls.VERSION, 'model_kind': cls.MODEL_KIND,
                     'pixel_m': screen['pixel_m'], 'screen_size_known': screen['known_size'],
-                    'viewing_m': screen['viewing_m'], 'fit_error_px': screen['fit_error_px'],
+                    'viewing_m': screen['viewing_m'],
                     'correction_reach_px': float(reach),
                     'position_tolerance_m': (cls.POSITION_TOLERANCE_M if screen['known_size']
                                              else cls.FITTED_SIZE_TOLERANCE_M),

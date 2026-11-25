@@ -135,16 +135,11 @@ def fit(bursts, origins, targets, display, pixel_mm=None):
         if not VIEWING_RANGE_M[0] <= viewing <= VIEWING_RANGE_M[1]:
             return None
         predicted = project(features, display, frame, center, pixel_m, offsets, gains)
-        errors = []
-        for first, count, target in zip(np.r_[0, np.cumsum(counts)[:-1]], counts, np.asarray(targets, dtype=float)):
-            landed = predicted[first:first+count]
-            landed = landed[np.isfinite(landed).all(axis=1)]
-            if len(landed)*2 < count:
+        for first, count in zip(np.r_[0, np.cumsum(counts)[:-1]], counts):
+            if np.isfinite(predicted[first:first+count]).all(axis=1).sum()*2 < count:
                 return None
-            errors.append(np.linalg.norm(np.median(landed, axis=0)-target))
         return {'frame': frame, 'center': center, 'pixel_m': float(pixel_m), 'gains': gains,
-                'eye_offsets': offsets, 'known_size': bool(known_size),
-                'viewing_m': float(viewing), 'fit_error_px': float(np.median(errors))}
+                'eye_offsets': offsets, 'known_size': bool(known_size), 'viewing_m': float(viewing)}
 
     lower = np.r_[[-3.]*3, [-1.3]*3, .3, .3, -1.4]
     upper = np.r_[[3.]*3, [1.3]*3, 1.3, 1.3, 1.4]

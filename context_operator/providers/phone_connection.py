@@ -143,7 +143,7 @@ def wifi_address(value):
 
 @dataclass(frozen=True)
 class PhoneConnection:
-    transport: str = 'usb'
+    transport: str
     host: str = ''
     found_host: str = field(default='', init=False, compare=False)
 
@@ -156,7 +156,7 @@ class PhoneConnection:
 
     @classmethod
     def from_settings(cls, settings):
-        return cls(settings.get('phone_transport', 'usb'), settings.get('phone_wifi_host', ''))
+        return cls(settings['phone_transport'], settings.get('phone_wifi_host', ''))
 
     def open(self, *, stop_event=None):
         if self.transport == 'usb':
@@ -170,7 +170,7 @@ class PhoneConnection:
                 return socket.create_connection((self.host, WIFI_PORT), timeout=2)
             except OSError:
                 pass
-        hosts = find_phones() if stop_event is None else find_phones(stop_event=stop_event)
+        hosts = find_phones(stop_event=stop_event)
         if stop_event is not None and stop_event.is_set():
             raise ConnectionAbortedError('iPhone connection cancelled')
         if hosts:

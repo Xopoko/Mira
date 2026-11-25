@@ -5,7 +5,6 @@ from ..settings import LOCAL
 from ..core.contracts import Gaze, GazeMeasurement, GAZE_TTL
 from ..foundations.gaze.smoothing import Smoother
 from ..foundations.gaze.arkit import ARKitWorker
-from .phone_connection import PhoneConnection
 
 def learning_path(key,folder=None):
     folder=LOCAL if folder is None else Path(folder)
@@ -14,7 +13,7 @@ def learning_path(key,folder=None):
 class PhoneGaze:
     def __init__(self,bounds,connection=None):
         from ..personalization import ProfileStore
-        self.connection=connection or PhoneConnection()
+        self.connection=connection
         self.profile,status=ProfileStore(LOCAL).load(bounds)
         self.profile_key=status['profile_key']
         # Held-out error informs the search region.
@@ -26,7 +25,7 @@ class PhoneGaze:
 
     def start(self):
         if self.worker and self.worker.is_alive():return
-        self.worker=ARKitWorker(connection=self.connection);self.worker.start()
+        self.worker=ARKitWorker(self.connection);self.worker.start()
 
     def poll(self,radius):
         self.measurement=None;self.invalid_captured=None

@@ -16,7 +16,7 @@ BOUNDS=Rect(0,0,1000,700)
 class PhoneGazePollTests(unittest.TestCase):
     def test_base_output_clips_but_training_keeps_full_extrapolation(self):
         phone=PhoneGaze.__new__(PhoneGaze);phone.bounds=BOUNDS;phone.worker=Mock();phone.profile=Mock()
-        phone.connection=PhoneConnection()
+        phone.connection=PhoneConnection('wifi')
         phone.profile.supports.return_value=True;phone.profile.predict.return_value=np.array([2000,-500])
         phone.smoother=Smoother(.065,scale=BOUNDS.h);phone.last_seq=0;phone.validation_radius=140.
         phone.worker.latest.return_value=Sample(seq=1,captured=100,features=np.zeros(22))
