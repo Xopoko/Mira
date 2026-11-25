@@ -10,16 +10,8 @@ from pathlib import Path
 import numpy as np
 
 from ..settings import LOCAL
-from .session import STARTER_PROTOCOL, SUPERSEDED_PROTOCOLS, StarterSession
+from .session import STARTER_PROTOCOL, SUPERSEDED_PROTOCOLS, StarterSession, _bounds
 from .model import StarterProfile
-
-
-def _bounds(bounds):
-    value = bounds.as_list() if hasattr(bounds, 'as_list') else bounds
-    result = np.asarray(value, dtype=float)
-    if result.shape != (4,) or not np.isfinite(result).all():
-        raise ValueError('Invalid display')
-    return result.tolist()
 
 
 def _sha(path):
@@ -30,7 +22,7 @@ def _accepted_report(protocol, report):
     return (protocol == STARTER_PROTOCOL and isinstance(report, dict) and
             report.get('quality') == 'starter' and report.get('usable') is True and
             report.get('passed') is False and
-            report.get('scope') == 'starter-independent-targets' and
+            report.get('scope') == StarterSession.result_scope and
             report.get('train_targets') == len(StarterSession.train_targets) and
             report.get('check_targets') == len(StarterSession.check_targets))
 
@@ -77,7 +69,7 @@ class ProfileStore:
         return profile, receipt
 
     def _read(self, bounds):
-        display = _bounds(bounds)
+        display = _bounds(bounds).tolist()
         for profile_path, receipt_path in ((self.profile_path, self.receipt_path),
                                            (self.profile_backup, self.receipt_backup)):
             try:
@@ -121,7 +113,7 @@ class ProfileStore:
 
     def adopt(self, profile, report, bounds, collection_path=None, activate=None):
         """Commit a usable starter; recover the accepted pair on error."""
-        display = _bounds(bounds)
+        display = _bounds(bounds).tolist()
         protocol = profile.metadata.get('protocol')
         if not _accepted_report(protocol, report) or profile.metadata.get('display') != display:
             raise ValueError('Candidate has no matching independent acceptance')

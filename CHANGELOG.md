@@ -49,6 +49,12 @@
   when the fixation is ready to confirm.
 - Saving a webcam profile no longer replaces the previous one when its backup
   cannot be written.
+- A command never uses a gaze reading older than 200 ms. Some checks allowed
+  250 ms.
+- Dictation that went to the window's current focus is no longer reported as
+  typed into a named control. Gaze setup no longer says the measurements were
+  saved when saving failed, and the game gaze feed no longer opens while a
+  reader blocks it from clearing the previous packet.
 
 ## 1.3.1
 
