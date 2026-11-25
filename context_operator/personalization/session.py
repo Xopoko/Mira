@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ..foundations.gaze.arkit import ENGINE_VERSION, IRIS_NUMBERS, IRIS_PROFILE_NUMBERS
+from ..foundations.gaze.arkit import ENGINE_VERSION
 
 
 STARTER_PROTOCOL = 'personal-arkit-starter-v2'
@@ -17,8 +17,6 @@ MIN_FRAMES = 12
 MIN_DURATION = .65
 SETTLE_SECONDS = .85
 DISTANCE_TOLERANCE_M = .07
-# What the phone measured on the iris itself, kept with a fixation when every frame has it.
-IRIS_RECORDS = (('iris', IRIS_NUMBERS), ('iris_profile', IRIS_PROFILE_NUMBERS))
 
 
 def _bounds(bounds):
@@ -122,17 +120,10 @@ class StarterSession:
                         len(features) < MIN_FRAMES or origins.shape != (len(features), 2, 3) or
                         not np.isfinite(features).all() or not np.isfinite(origins).all()):
                     raise ValueError('Invalid setup archive')
-            kept = [{key: record[key] for key in ('phase', 'index', 'target', 'features', 'eye_origins')}
-                    for record in records]
-            for record, saved in zip(records, kept):
-                for key, size in IRIS_RECORDS:
-                    try:
-                        numbers = np.asarray(record.get(key), dtype=float)
-                    except (TypeError, ValueError):
-                        continue
-                    if numbers.shape == (len(saved['features']), size) and np.isfinite(numbers).all():
-                        saved[key] = record[key]
-            setattr(session, phase, kept)
+            setattr(session, phase, [
+                {key: record[key] for key in ('phase', 'index', 'target', 'features', 'eye_origins')}
+                for record in records
+            ])
         if session.check and len(session.train) != len(session.train_targets):
             raise ValueError('Check data without complete training')
         if len(session.train) == len(session.train_targets):
@@ -273,12 +264,6 @@ class StarterSession:
         record = {'phase': self.phase, 'index': self.index, 'target': _target(self.bounds, targets[self.index]),
                   'features': [np.asarray(s.features, dtype=float).tolist() for s in frames],
                   'eye_origins': [np.asarray(s.eye_origins, dtype=float).tolist() for s in frames]}
-        # The phone's own iris measurement rides along when every frame has one,
-        # so the two eye signals can be compared on the same fixations.
-        for key, size in IRIS_RECORDS:
-            readings = [getattr(s, key, ()) for s in frames]
-            if all(len(reading) == size for reading in readings):
-                record[key] = [list(reading) for reading in readings]
         self.hold_reason = ''
         records = self.check if self.phase == 'check' else self.train
         old_state = self.phase, self.index

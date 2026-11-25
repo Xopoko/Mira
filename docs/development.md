@@ -79,12 +79,10 @@ new setup:
 
 It fits each attempt's setup points with the current model and prints the error
 on that attempt's check points next to the error recorded at the time. Pass a
-folder to replay attempts kept elsewhere. An attempt recorded with an iPhone
-that [measures the iris itself](architecture.md#the-iris-the-iphone-measures-itself)
-is scored with both eye signals on the same fixations. The median and `p90`
-columns are over frames. `point` is how far whole fixations landed from their
-targets, which is what remains once jitter is smoothed away. Five check points
-are few, so `--leave-one-out` also holds out every fixation in turn.
+folder to replay attempts kept elsewhere. The `now` and `p90` columns are over
+frames. `point` is how far whole fixations landed from their targets, which is
+what remains once jitter is smoothed away. Five check points are few, so
+`--leave-one-out` also holds out every fixation in turn.
 
 ## Feature guides
 

@@ -13,17 +13,6 @@
   Mira now smooths it out between the setup points: the first thirteen-point
   setup on that screen replays at 117 px. Earlier gaze setups need to be run
   again.
-- Measure the iris on the iPhone. The companion finds the edge of each iris
-  in its camera frame, in a small window around the place ARKit's eye
-  rotation predicts, and sends where it is with every reading, together with
-  the brightness across the edge on four sides, averaged along arcs. These
-  are numbers, and the frame stays on the phone. Gaze setup records them with
-  each point, and `scripts/evaluate_gaze_setup.py` scores a recorded setup
-  with ARKit's eye rotation and with the measured iris side by side. This is
-  an experiment to find out whether Mira's own measurement beats ARKit's. On
-  the first setup recorded this way it did not: with the phone below the
-  screen, ARKit's eye rotation was about twice as accurate. Tracking keeps
-  using ARKit. The iPhone companion is at 0.4.2.
 - Redesign the Windows app as a dark companion app. **Overview** now leads
   with a live preview of your screen beside the iPhone, accuracy and quick
   settings. **Profile** is now **Calibration**, the highlight settings moved
@@ -35,7 +24,7 @@
 - Redesign the iPhone companion to match. It shows a monitor with the gaze
   light following your eyes in place of the top-down plan, as soon as it sees
   you and before the PC connects. The connection settings moved to their own
-  page, and the app is dark only. The iPhone companion is at 0.4.0.
+  page, and the app is dark only. The iPhone companion is at 0.4.3.
 - Bring gaze tracking and screen contours to the front of the Windows setup.
 - Make local voice commands optional during setup and ordinary tracking.
 - Remove USB confirmation buttons. The iPhone USB connection remains available.

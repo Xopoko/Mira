@@ -211,11 +211,7 @@ final class EyeTracker: NSObject, ObservableObject, ARSessionDelegate {
                 guard UIApplication.shared.applicationState == .active else { return }
                 let config = ARFaceTrackingConfiguration()
                 let formats = ARFaceTrackingConfiguration.supportedVideoFormats.filter { $0.captureDeviceType == .builtInTrueDepthCamera }
-                // The fastest format, and among those the sharpest: the iris fit works in frame pixels.
-                func rank(_ format: ARConfiguration.VideoFormat) -> (Int, CGFloat) {
-                    (format.framesPerSecond, format.imageResolution.width*format.imageResolution.height)
-                }
-                guard let format = formats.max(by: { rank($0) < rank($1) }) else {
+                guard let format = formats.sorted(by: { $0.framesPerSecond > $1.framesPerSecond }).first else {
                     self.fail("The TrueDepth camera isn’t available")
                     return
                 }
@@ -291,7 +287,6 @@ final class EyeTracker: NSObject, ObservableObject, ARSessionDelegate {
             packet["lookAt"] = [look.x, look.y, look.z]
             packet["blink"] = [face.blendShapes[.eyeBlinkLeft]?.floatValue ?? 0,
                                face.blendShapes[.eyeBlinkRight]?.floatValue ?? 0]
-            if let iris = IrisReading.measure(frame: frame, face: face) { packet["iris"] = iris }
         }
         if activeTransport == .wifi {
             wifiServer.update(packet: packet, captured: frame.timestamp)

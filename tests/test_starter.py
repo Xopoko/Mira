@@ -1,3 +1,4 @@
+import importlib.util
 import json
 import tempfile
 import unittest
@@ -87,6 +88,29 @@ class StarterTests(unittest.TestCase):
         bursts[4][0, 13:19] = [0, 0, -1, 0, 0, -1]
         profile = StarterProfile.fit(bursts, origins, targets, METADATA, PIXEL_MM)
         self.assert_lands_on(profile, pixels(StarterSession.check_targets), 15.)
+
+    def test_saved_attempt_replays_with_every_fixation_held_out(self):
+        script = Path(__file__).resolve().parents[1]/'scripts'/'evaluate_gaze_setup.py'
+        spec = importlib.util.spec_from_file_location('evaluate_gaze_setup', script)
+        evaluate = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(evaluate)
+
+        def fixations(fractions):
+            return [{'target': target.tolist(), 'features': rows.tolist(), 'eye_origins': origins.tolist()}
+                    for target in pixels(fractions) for rows, origins in [burst(target, BOUNDS)]]
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)/'attempt.json'
+            collection = {'display': BOUNDS.as_list(), 'pixel_mm': PIXEL_MM,
+                          'train': fixations(StarterSession.train_targets), 'check': []}
+            path.write_text(json.dumps({'collection': collection}), encoding='utf-8')
+            self.assertIsNone(evaluate.replay(path))
+            collection['check'] = fixations(StarterSession.check_targets)
+            path.write_text(json.dumps({'collection': collection, 'report': {'median_px': 40.}}), encoding='utf-8')
+            result = evaluate.replay(path, leave_one_out=True)
+        self.assertEqual((result['train'], result['check'], result['recorded_median_px']), (13, 5, 40.))
+        for key in ('median_px', 'p90_px', 'point_px', 'held_out_px'):
+            self.assertLess(result[key], 12., key)
 
     def test_head_turn_and_eyes_alone_reach_the_same_pixel(self):
         checks = pixels(StarterSession.check_targets)

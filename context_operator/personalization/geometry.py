@@ -49,20 +49,6 @@ def rays(features, offsets, gains):
     return origin, np.einsum('nij,nj->ni', rotations, corrected)
 
 
-class ArkitEyes:
-    """ARKit's eye rotation as the eye signal; the fit scales it by two gains."""
-
-    lower, upper = .3, 1.3
-
-    def __init__(self, features, origins):
-        self.features = features
-        self.offsets = eye_offsets(features, origins)
-        self.start, self.sigma = EYE_GAIN, GAIN_SIGMA
-
-    def rays(self, gains):
-        return rays(self.features, self.offsets, gains)
-
-
 def _rotation(vector):
     angle = np.linalg.norm(vector)
     if angle < 1e-12:
@@ -93,13 +79,9 @@ def _center(display):
 
 
 def project(features, display, frame, center, pixel_m, offsets, gains):
-    """Screen pixels for ARKit readings; NaN when the ray misses the plane."""
-    features = np.atleast_2d(np.asarray(features, dtype=float))
-    return project_rays(*rays(features, offsets, gains), display, frame, center, pixel_m)
-
-
-def project_rays(origin, direction, display, frame, center, pixel_m):
     """Screen pixels hit by each gaze ray; NaN when the ray misses the plane."""
+    features = np.atleast_2d(np.asarray(features, dtype=float))
+    origin, direction = rays(features, offsets, gains)
     relative = origin-center
     approach = direction@frame[:, 2]
     with np.errstate(divide='ignore', invalid='ignore'):
@@ -114,58 +96,45 @@ def project_rays(origin, direction, display, frame, center, pixel_m):
 
 def fit(bursts, origins, targets, display, pixel_mm=None):
     """Fit the screen plane and the eye gains to the setup fixations."""
-    features = np.concatenate([np.asarray(burst, dtype=float) for burst in bursts])
-    eyes = ArkitEyes(features, np.concatenate([np.asarray(burst, dtype=float) for burst in origins]))
-    screen = fit_screen(eyes, [len(burst) for burst in bursts], targets, display, pixel_mm)
-    return dict(screen, gains=screen['eye'], eye_offsets=eyes.offsets)
-
-
-def fit_screen(eyes, counts, targets, display, pixel_mm=None):
-    """Fit the plane and the few numbers an eye signal leaves open.
-
-    `eyes` holds the frames of every fixation in order: `features`, a
-    `rays(values)` method, and for its own values the typical ones in `start`
-    with their `sigma`, `lower` and `upper`.
-    """
     display = np.asarray(display, dtype=float)
-    features = eyes.features
+    counts = [len(burst) for burst in bursts]
+    features = np.concatenate([np.asarray(burst, dtype=float) for burst in bursts])
+    eyes = np.concatenate([np.asarray(burst, dtype=float) for burst in origins])
     pixels = np.repeat(np.asarray(targets, dtype=float), counts, axis=0)
     # Every fixation counts once, however many frames it kept.
     weights = np.repeat(1/np.sqrt(counts), counts)/NOISE_RAD
+    offsets = eye_offsets(features, eyes)
     known_size = pixel_mm is not None and PIXEL_RANGE_MM[0] <= pixel_mm <= PIXEL_RANGE_MM[1]
     base_pixel_m = (pixel_mm if known_size else DEFAULT_PIXEL_MM)/1000
     relative = pixels-_center(display)
     eye_center = features[:, 4:7].mean(axis=0)
-    typical = np.asarray(eyes.start, dtype=float)
-    size_at = 6+len(typical)
 
     def unpack(values):
-        return (values[:3], values[3:6], values[6:size_at],
-                base_pixel_m if known_size else base_pixel_m*np.exp(values[size_at]))
+        return values[:3], values[3:6], values[6:8], base_pixel_m*np.exp(values[8]) if not known_size else base_pixel_m
 
     def residuals(values, base):
-        center, turn, eye, pixel_m = unpack(values)
+        center, turn, gains, pixel_m = unpack(values)
         frame = base@_rotation(turn)
-        origin, direction = eyes.rays(eye)
+        origin, direction = rays(features, offsets, gains)
         toward = center+(relative[:, :1]*frame[:, 0]+relative[:, 1:]*frame[:, 1])*pixel_m-origin
         toward /= np.linalg.norm(toward, axis=1, keepdims=True)
         # People sit in front of their screen: its normal points at them.
         sight = eye_center-center
         facing = np.array([sight@frame[:, 0], sight@frame[:, 1]])/(np.linalg.norm(sight)*FACING_SIGMA)
-        prior = np.r_[(eye-typical)/eyes.sigma, facing]
+        prior = np.r_[(gains-EYE_GAIN)/GAIN_SIGMA, facing]
         if not known_size:
             # One seat cannot tell a large far screen from a small near one.
-            prior = np.r_[prior, values[size_at]/SIZE_SIGMA]
+            prior = np.r_[prior, values[8]/SIZE_SIGMA]
         return np.r_[((direction-toward)*weights[:, None]).ravel(), prior]
 
     def solution(values, base):
         """The fitted screen, or None when most rays of some fixation miss it."""
-        center, turn, eye, pixel_m = unpack(values)
+        center, turn, gains, pixel_m = unpack(values)
         frame = base@_rotation(turn)
         viewing = np.linalg.norm(eye_center-center)
         if not VIEWING_RANGE_M[0] <= viewing <= VIEWING_RANGE_M[1]:
             return None
-        predicted = project_rays(*eyes.rays(eye), display, frame, center, pixel_m)
+        predicted = project(features, display, frame, center, pixel_m, offsets, gains)
         errors = []
         for first, count, target in zip(np.r_[0, np.cumsum(counts)[:-1]], counts, np.asarray(targets, dtype=float)):
             landed = predicted[first:first+count]
@@ -173,18 +142,18 @@ def fit_screen(eyes, counts, targets, display, pixel_mm=None):
             if len(landed)*2 < count:
                 return None
             errors.append(np.linalg.norm(np.median(landed, axis=0)-target))
-        return {'frame': frame, 'center': center, 'pixel_m': float(pixel_m), 'eye': eye,
-                'known_size': bool(known_size), 'viewing_m': float(viewing),
-                'fit_error_px': float(np.median(errors))}
+        return {'frame': frame, 'center': center, 'pixel_m': float(pixel_m), 'gains': gains,
+                'eye_offsets': offsets, 'known_size': bool(known_size),
+                'viewing_m': float(viewing), 'fit_error_px': float(np.median(errors))}
 
-    lower = np.r_[[-3.]*3, [-1.3]*3, np.broadcast_to(eyes.lower, typical.shape), -1.4]
-    upper = np.r_[[3.]*3, [1.3]*3, np.broadcast_to(eyes.upper, typical.shape), 1.4]
+    lower = np.r_[[-3.]*3, [-1.3]*3, .3, .3, -1.4]
+    upper = np.r_[[3.]*3, [1.3]*3, 1.3, 1.3, 1.4]
     if known_size:
-        lower, upper = lower[:size_at], upper[:size_at]
+        lower, upper = lower[:8], upper[:8]
     best = None
     for base in _candidate_frames(features):
         for distance in (.5, .8):
-            start = np.r_[eye_center-base[:, 2]*distance, 0, 0, 0, typical, 0][:len(lower)]
+            start = np.r_[eye_center-base[:, 2]*distance, 0, 0, 0, EYE_GAIN, 0][:len(lower)]
             try:
                 # Cauchy loss: a frame caught mid-blink or mid-saccade must not move the screen.
                 result = least_squares(residuals, start, args=(base,), bounds=(lower, upper),

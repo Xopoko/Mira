@@ -29,11 +29,8 @@ access.
 
 ## Connection and data
 
-The app sends numeric measurements only. They include where each iris is in
-the camera frame and how the brightness changes across its edge on four
-sides, averaged along arcs, which the app measures on the phone. The frame
-itself is not sent or stored. Wi-Fi is the default for new installs and serves the
-measurements on TCP port `39472` over the private local network.
+The app sends numeric measurements only. Wi-Fi is the default for new
+installs and serves them on TCP port `39472` over the private local network.
 The [Wi-Fi guide](../docs/phone-wifi.md) describes the connection and its
 limits.
 

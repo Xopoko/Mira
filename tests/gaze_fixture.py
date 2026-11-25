@@ -2,23 +2,13 @@
 
 import numpy as np
 
-from context_operator.personalization import geometry, iris
+from context_operator.personalization import geometry
 
 PIXEL_MM = .25
 EYE_OFFSETS = np.array([[.032, .028, .026], [-.032, .028, .026]])
 SCREEN_CENTER = np.array([0., .12, .05])
 # Camera space: the screen faces -z, its rows run toward -y.
 SCREEN_FRAME = np.array([[1., 0, 0], [0, -1., 0], [0, 0, -1.]])
-# A phone standing upright: the sensor image is on its side and mirrored.
-FRAME_SIZE = (1440., 1080.)
-FRAME_MAP = np.array([[0., -1100.], [-1100., 0.]])
-FRAME_SHIFT = np.array([720., 540.])
-
-
-def screen_point(target, bounds, pitch_mm=PIXEL_MM):
-    display = np.asarray(bounds.as_list(), dtype=float)
-    offset = (np.asarray(target, dtype=float)-display[:2]-display[2:]/2)*pitch_mm/1000
-    return SCREEN_CENTER+offset[0]*SCREEN_FRAME[:, 0]+offset[1]*SCREEN_FRAME[:, 1]
 
 
 def reading(target, bounds, *, head=(0., 0., -.7), turn=0., gains=geometry.EYE_GAIN, pitch_mm=PIXEL_MM):
@@ -28,7 +18,9 @@ def reading(target, bounds, *, head=(0., 0., -.7), turn=0., gains=geometry.EYE_G
     the rest, and ARKit over-reports their rotation by 1/gains.
     """
     head = np.asarray(head, dtype=float)
-    point = screen_point(target, bounds, pitch_mm)
+    display = np.asarray(bounds.as_list(), dtype=float)
+    offset = (np.asarray(target, dtype=float)-display[:2]-display[2:]/2)*pitch_mm/1000
+    point = SCREEN_CENTER+offset[0]*SCREEN_FRAME[:, 0]+offset[1]*SCREEN_FRAME[:, 1]
     yaw = turn*np.arctan2(point[0]-head[0], point[2]-head[2])
     c, s = np.cos(yaw), np.sin(yaw)
     rotation = np.array([[c, 0, s], [0, 1., 0], [-s, 0, c]])
@@ -63,16 +55,3 @@ def burst(target, bounds, *, camera=None, **seat):
     rows = np.tile(row, (12, 1))
     rows[:, 13] += np.linspace(-.0004, .0004, len(rows))
     return rows, np.tile(origins, (12, 1, 1))
-
-
-def iris_burst(target, bounds, *, camera=None, limbus_m=iris.LIMBUS_M, **seat):
-    """A burst plus what the phone measures in its frame: each iris where a pinhole camera sees it."""
-    row, origins = reading(target, bounds, **seat)
-    toward = screen_point(target, bounds, seat.get('pitch_mm', PIXEL_MM))-origins
-    limbus = origins+limbus_m*toward/np.linalg.norm(toward, axis=1, keepdims=True)
-    if camera is not None:
-        row, origins = turned(row, origins, camera)
-        limbus = limbus@camera.T
-    pixels = (limbus[:, :2]/-limbus[:, 2:])@FRAME_MAP.T+FRAME_SHIFT
-    measured = np.r_[FRAME_SIZE, FRAME_MAP.ravel(), FRAME_SHIFT, pixels[0], 11., .9, pixels[1], 11., .9]
-    return np.tile(row, (12, 1)), np.tile(origins, (12, 1, 1)), np.tile(measured, (12, 1))
