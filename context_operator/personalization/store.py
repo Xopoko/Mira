@@ -71,11 +71,9 @@ class ProfileStore:
         if metadata.get('display') != display or metadata.get('protocol') != protocol:
             raise ValueError('Personal profile belongs to another display')
         profile = StarterProfile.load(profile_path, metadata)
-        if (profile.training_x.shape[1] != 22 or
-                receipt.get('engine') != metadata.get('engine') or
-                receipt.get('model') != profile.settings.get('model') or
+        if (receipt.get('engine') != metadata.get('engine') or
                 receipt.get('train_samples') != len(profile.training_x)):
-            raise ValueError('Personal profile feature count differs')
+            raise ValueError('Personal profile receipt does not match')
         return profile, receipt
 
     def _read(self, bounds):
@@ -125,10 +123,7 @@ class ProfileStore:
         """Commit a usable starter; recover the accepted pair on error."""
         display = _bounds(bounds)
         protocol = profile.metadata.get('protocol')
-        if (not _accepted_report(protocol, report) or
-                profile.metadata.get('display') != display or
-                not isinstance(profile, StarterProfile) or
-                profile.training_x.shape[1] != 22):
+        if not _accepted_report(protocol, report) or profile.metadata.get('display') != display:
             raise ValueError('Candidate has no matching independent acceptance')
         self.folder.mkdir(parents=True, exist_ok=True)
         staged = self.folder/'gaze-personal.staged.npz'
@@ -146,9 +141,7 @@ class ProfileStore:
             receipt = {'version': 1, 'protocol': protocol, 'display': display,
                        'sha256': key, 'created_at': datetime.now(timezone.utc).isoformat(),
                        'engine': profile.metadata.get('engine'),
-                       'model': profile.settings.get('model'),
                        'train_samples': int(len(profile.training_x)),
-                       'training_cv_by_target': profile.settings.get('cv_by_target', []),
                        'collection_sha256': _sha(Path(collection_path)) if collection_path else None,
                        'report': report}
             receipt_stage.write_text(json.dumps(receipt, ensure_ascii=False, indent=2), encoding='utf-8')
