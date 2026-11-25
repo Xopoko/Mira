@@ -3,7 +3,6 @@ from dataclasses import replace
 import tempfile
 import unittest
 from unittest.mock import patch
-from pathlib import Path
 
 import numpy as np
 

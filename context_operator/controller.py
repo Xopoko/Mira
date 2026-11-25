@@ -5,7 +5,7 @@ import hashlib
 import threading
 import time
 from PySide6.QtCore import QObject, Signal, QTimer
-from .core.contracts import Focus, Gaze, GazeMeasurement, Element, Rect, Intent, TARGET_ACTIONS, GAZE_TTL, MAP_TTL
+from .core.contracts import Focus, Gaze, GazeMeasurement, Element, Rect, TARGET_ACTIONS, GAZE_TTL, MAP_TTL
 from .core.fusion import Fusion
 from .core.webcam import GazeArbitrator
 from .core.commands import quick_intent

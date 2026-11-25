@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 
-from .core.contracts import Gaze, Rect
+from .core.contracts import Rect
 from .providers.game_gaze import GameGazePublisher
 
 

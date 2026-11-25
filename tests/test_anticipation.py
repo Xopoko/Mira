@@ -1,6 +1,6 @@
 import os
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
-import json,tempfile,time,unittest
+import json,tempfile,unittest
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import Mock,patch
@@ -10,7 +10,7 @@ from PySide6.QtGui import QImage,QPainter
 from PySide6.QtCore import QRectF
 from context_operator.core.click_learning import PointerMotion,HumanClick
 from context_operator.core.contracts import Rect,Element,Scene,Gaze
-from context_operator.core.anticipation import Anticipation,IntentPredictor,OnlineRanker,PRIOR,softmax
+from context_operator.core.anticipation import Anticipation,IntentPredictor
 from context_operator.providers.anticipation import IntentLearning
 from context_operator.providers.clicks import ClickFilter
 from context_operator.controller import Controller

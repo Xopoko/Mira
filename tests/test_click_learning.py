@@ -9,7 +9,7 @@ from unittest.mock import Mock,patch
 import numpy as np
 from PySide6.QtWidgets import QApplication
 from context_operator.core.click_learning import ClickHistory,HumanClick
-from context_operator.core.contracts import GazeMeasurement,Gaze,Rect,Element,Focus
+from context_operator.core.contracts import GazeMeasurement,Gaze,Rect
 from context_operator.providers.clicks import ClickFilter
 from context_operator.providers.learning import GazeLearning
 from context_operator.providers.personal_model import adaptive_prediction,train_candidate,PersonalTrainer

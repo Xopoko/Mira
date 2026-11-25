@@ -1,7 +1,7 @@
 """Small cached geometric overview; it contains no captured screen pixels."""
 import math
 from collections import OrderedDict
-from PySide6.QtCore import Qt,QRectF,QPointF
+from PySide6.QtCore import QRectF,QPointF
 from PySide6.QtGui import QImage,QPainter,QPen,QColor
 
 

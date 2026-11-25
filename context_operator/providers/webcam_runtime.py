@@ -14,7 +14,6 @@ from pathlib import Path
 import struct
 import sys
 import threading
-import time
 
 import numpy as np
 
