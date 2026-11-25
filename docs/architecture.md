@@ -53,8 +53,9 @@ Child processes are started with `CREATE_NO_WINDOW`.
 
 `personalization/session.py` collects thirteen labeled fixations for training
 and five at other screen positions for checking, all from one seat. A
-sample is 22 numbers from ARKit: eye directions, head pose and 3D eye origins.
-It needs no camera image. A target counts after a steady fixation of at least
+sample is 22 numbers worked out from ARKit's head and eye transforms (head
+pose, eye directions and where each eye's ray meets the camera plane) plus the
+3D position of each eye. It needs no camera image. A target counts after a steady fixation of at least
 12 fresh frames over 0.65 s, confirmed with Space. Stale, duplicate and blink
 frames do not advance collection.
 
@@ -77,8 +78,8 @@ with one pixel size, which is less accurate where they meet at an angle.
 
 What the plane leaves over is not random. The error drifts slowly across the
 screen and repeats from one setup to the next, so the profile adds a smooth
-field through the leftover error at the thirteen setup points. It reaches
-about half a screen height from each point and fades to nothing beyond.
+field through the leftover error at the thirteen setup points. Each point's
+share fades smoothly with distance, on a scale of half a screen height.
 
 The five check targets, which the fit never sees, give the median and
 90th-percentile error, jitter and coverage. A setup within the limits is
@@ -114,8 +115,9 @@ that the position is outside the setup range.
 `personalization/store.py` saves the accepted model and its report as a pair
 and keeps the previous pair as a backup. It reads back what it wrote and
 restores the old pair if anything fails. The report records the model's hash
-and the display bounds, and a profile is not loaded on a different display
-layout. The files hold numeric arrays and JSON, never pickle.
+and the bounds of the virtual desktop, and a profile is not loaded when those
+bounds differ. Rearranging monitors inside the same bounds is not detected.
+The files hold numeric arrays and JSON, never pickle.
 
 ## Corrections, focus and the overlay
 

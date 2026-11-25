@@ -1,7 +1,7 @@
 # Next-target preview
 
-The preview is on by default. **Settings → Advanced → Highlight → Show a
-possible next target** turns it off. It is shown only in the **Follow gaze**
+The preview is on by default. **Settings → Advanced → Optional actions → Show
+a possible next target** turns it off. It is shown only in the **Follow gaze**
 highlight mode with quiet mode off. A faint purple outline marks the predicted
 element. The yellow outline marks the current action target.
 

@@ -20,7 +20,8 @@ to launch without a console. Mira runs as one instance. Close the existing
 window before restarting to load code changes.
 
 The Qt check runs offscreen with synthetic sources and writes screenshots under
-`.local/evidence/desktop-ui/`. CI runs the unit tests and this check. The
+`.local/evidence/desktop-ui/`. CI runs the unit tests and this check on
+Windows, and `check_phone_build.py` and `check_phone_native.py` on macOS. The
 other `scripts/check_*.py` are manual checks. Read a script before running it,
 since some open hardware, run models or use a native window. Unit and
 offscreen tests cover behavior under controlled inputs. Camera accuracy and
@@ -51,6 +52,7 @@ A source checkout uses `.local/`. A normal Python package installation uses
 | `settings.json` | Source preferences, model endpoint, and control settings |
 | `gaze-personal.npz` and `personal-profile.json` | Accepted model and its validation report |
 | `gaze-personal.bak.npz` and `personal-profile.bak.json` | Previous accepted pair |
+| `gaze-personal.superseded.npz` and `personal-profile.superseded.json` | A pair from an earlier model that this version cannot load, kept when a new profile replaces it |
 | `personal-starter-session.json`, `starter-candidates/`, `starter-attempts/` | Setup observations, candidates, and attempt history |
 | `starter-last-result.json` | Report of the latest setup attempt |
 | `gaze-adaptation-personal-*.json` | Click-based gaze corrections, one file per accepted profile |

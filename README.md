@@ -97,9 +97,11 @@ how Mira handles stale observations.
 
 ## Install on Windows
 
-Use Windows x64 and 64-bit Python 3.11. The Practice layout shown above is
-available when you [build from source](#build-from-source). To install the
-latest published release, download the wheel and `requirements.lock.txt`
+Use Windows x64 and 64-bit Python 3.11. This page describes the current
+source: the thirteen-point setup and the Practice layout shown above come with
+a [build from source](#build-from-source). The published release is older and
+has [its own instructions](https://github.com/Xopoko/Mira/blob/v1.3.1/README.md).
+To install it, download the wheel and `requirements.lock.txt`
 from [Releases](https://github.com/Xopoko/Mira/releases), then run these
 commands in PowerShell from the download folder.
 

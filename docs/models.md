@@ -24,8 +24,8 @@ Mira transcribes speech on your PC using Parakeet and Silero VAD. Short commands
 ## Local model access
 
 Mira starts a local model (speech recognition, the webcam runtime, target
-reranking, screen recognition or a loopback command model) only when it is
-allowed to. Close Mira and set the opt-in in PowerShell, then launch Mira from
+reranking or screen recognition) or sends a command to a model server on this
+PC only when it is allowed to. Mira does not start that server. Close Mira and set the opt-in in PowerShell, then launch Mira from
 the same window.
 
 ```powershell
@@ -39,8 +39,9 @@ from the install folder. From a source checkout, run
 The opt-in applies only when `MIRA_LOCAL_MODELS_ROOT` is unset and there is no
 `LocalModels` folder next to the Mira folder. LocalModels is a separate model
 manager that is not part of this repository. When it is present, Mira asks its
-start policy before loading a model and reads models from that installation
-instead of Mira's data directory.
+start policy before loading a model and reads the reranking and screen
+recognition models from that installation. Speech models are always read from
+Mira's data directory.
 
 ## Interpret complex commands
 
