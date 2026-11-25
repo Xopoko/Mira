@@ -230,7 +230,7 @@ with patch.dict(c.settings,click_learning=True,anticipation=True), \
     window.navigate(1);app.processEvents()
     window.refresh_learning('off')
     assert window.click_plain_status.text()=='Mira learns from your clicks once iPhone is connected.'
-    assert window.prediction_plain_status.text().endswith('Not enough clicks yet.')
+    assert window.prediction_plain_status.text().startswith('Mira suggests')
     assert not window.click_plain_status.isVisible()
     window.learning_advanced.click()
     assert window.click_plain_status.isVisible()
@@ -242,7 +242,6 @@ with patch.dict(c.settings,click_learning=True,anticipation=True), \
     c.learning.click_accepted=3;c.anticipation.gaze_model.learned=1
     window.refresh_learning('go')
     assert window.click_plain_status.text()=='Mira has learned from 3 of your clicks.'
-    assert window.prediction_plain_status.text().endswith('Ready.')
     c.settings['click_learning']=False;c.settings['anticipation']=False
     window.refresh_learning('go')
     assert window.click_plain_status.text()=='Click learning is off.'

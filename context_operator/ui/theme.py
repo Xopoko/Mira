@@ -168,9 +168,9 @@ def label(text, style=None, wrap=False):
     return widget
 
 
-def card(name='card'):
+def card():
     frame = QFrame()
-    frame.setObjectName(name)
+    frame.setObjectName('card')
     layout = QVBoxLayout(frame)
     layout.setContentsMargins(18, 16, 18, 16)
     layout.setSpacing(10)
@@ -205,10 +205,10 @@ STATE_COLORS = {'off': FAINT, 'standby': WAITING, 'go': ACCENT, 'hold': DANGER}
 
 class Lamp(QWidget):
     """A state dot. The word beside it always says the state; the dot repeats it."""
-    def __init__(self, name, diameter=8):
+    def __init__(self, name):
         super().__init__()
         self.name = name
-        self.setFixedSize(diameter, diameter)
+        self.setFixedSize(8, 8)
         self.set_state('off', 'Off')
 
     def set_state(self, state, word):

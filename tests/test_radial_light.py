@@ -4,14 +4,14 @@ import unittest
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QPointF,QRectF
 from PySide6.QtGui import QImage,QPainter
-from context_operator.ui.overlay import paint_light
+from context_operator.ui.light_cache import LIGHT_CACHE
 
 APP=QApplication.instance() or QApplication([])
 
 def render(center=QPointF(110,100),energy=0.):
     image=QImage(520,260,QImage.Format_ARGB32_Premultiplied);image.fill(0)
     p=QPainter(image)
-    paint_light(p,[('primary',QRectF(70,70,80,60)),('neighbor',QRectF(190,70,280,60))],center,180,'primary',energy)
+    LIGHT_CACHE.paint(p,[('primary',QRectF(70,70,80,60)),('neighbor',QRectF(190,70,280,60))],center,180,'primary',energy,None)
     p.end();return image
 
 class LightTests(unittest.TestCase):

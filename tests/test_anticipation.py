@@ -132,7 +132,7 @@ class PredictionTests(unittest.TestCase):
         self.assertIsNotNone(forecast);self.assertEqual(forecast.target.id,'a');self.assertEqual(p.model.learned,0)
         click=HumanClick(670,220,10.75,10.8,10,20)
         self.assertTrue(p.feedback(click,10.81));self.assertEqual(p.model.learned,1)
-        self.assertEqual(p.model.hits,1);self.assertGreaterEqual(p.model.lead_sum_ms,150)
+        self.assertEqual(p.model.hits,1)
         self.assertIsNone(p.current);self.assertFalse(p.feedback(click,10.82))
 
     def test_motion_only_works_and_idle_stale_or_future_scene_hides(self):
@@ -174,7 +174,7 @@ class PredictionTests(unittest.TestCase):
     def test_missing_candidate_is_counted_separately_and_not_fabricated(self):
         p=IntentPredictor();move(p)
         self.assertTrue(p.feedback(HumanClick(900,650,10.7,10.8,10,20),10.81))
-        self.assertEqual((p.model.evaluated,p.model.unmapped,p.model.learned),(1,1,0))
+        self.assertEqual((p.model.evaluated,p.model.hits,p.model.learned),(1,0,0))
 
     def test_prequential_result_is_frozen_before_training(self):
         p=IntentPredictor();move(p);snapshot=p.snapshots[-1]
@@ -193,7 +193,7 @@ class PredictionTests(unittest.TestCase):
                 p=IntentPredictor();move(p)
                 p.observe_scene(Scene(2,10.6,BOUNDS,(replacement,*ELEMENTS[1:]),10),10.61)
                 p.feedback(HumanClick(670,220,10.7,10.8,10,20),10.81)
-                self.assertEqual((p.model.evaluated,p.model.hits,p.model.unmapped,p.model.learned),(1,0,1,0))
+                self.assertEqual((p.model.evaluated,p.model.hits,p.model.learned),(1,0,0))
 
     def test_page_change_after_press_and_delayed_arrival_do_not_relabel_click(self):
         for capture in (10.6,10.72):

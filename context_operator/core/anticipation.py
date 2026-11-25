@@ -41,8 +41,7 @@ class _Ranker:
 
     def __init__(self):
         self.weights=self.prior.copy();self.gradient=np.full_like(self.prior,.1)
-        self.replay=[];self.learned=0;self.evaluated=0;self.hits=0;self.unmapped=0
-        self.shown=0;self.shown_hits=0;self.prior_hits=0;self.last_role=''
+        self.replay=[];self.learned=0;self.evaluated=0;self.hits=0;self.prior_hits=0;self.last_role=''
 
     def scores(self,x):return np.asarray(x)@self.weights
 
@@ -61,8 +60,8 @@ class _Ranker:
 
     def state(self):
         return dict(schema=1,weights=self.weights.tolist(),gradient=self.gradient.tolist(),replay=copy.deepcopy(self.replay),
-                    learned=self.learned,evaluated=self.evaluated,hits=self.hits,unmapped=self.unmapped,
-                    shown=self.shown,shown_hits=self.shown_hits,prior_hits=self.prior_hits,last_role=self.last_role)
+                    learned=self.learned,evaluated=self.evaluated,hits=self.hits,
+                    prior_hits=self.prior_hits,last_role=self.last_role)
 
     @classmethod
     def restore(cls,data):
@@ -80,7 +79,7 @@ class _Ranker:
             if x.ndim!=2 or x.shape[1]!=model.prior.size or not 2<=len(x)<=48 or not np.isfinite(x).all() or not 0<=r['y']<len(x):
                 raise ValueError('Invalid replay example')
         model.replay=copy.deepcopy(replay)
-        for key in ('learned','evaluated','hits','unmapped','shown','shown_hits','prior_hits'):
+        for key in ('learned','evaluated','hits','prior_hits'):
             value=data[key]
             if not isinstance(value,int) or value<0:raise ValueError('Invalid intention statistics')
             setattr(model,key,value)
@@ -90,20 +89,6 @@ class _Ranker:
 
 class OnlineRanker(_Ranker):
     prior=PRIOR
-
-    def __init__(self):
-        super().__init__()
-        self.lead_sum_ms=0.
-
-    def state(self):
-        return dict(super().state(),lead_sum_ms=self.lead_sum_ms)
-
-    @classmethod
-    def restore(cls,data):
-        model=super().restore(data)
-        model.lead_sum_ms=float(data['lead_sum_ms'])
-        if not math.isfinite(model.lead_sum_ms) or model.lead_sum_ms<0:raise ValueError('Invalid lead time')
-        return model
 
 
 class GazeRanker(_Ranker):
@@ -247,7 +232,7 @@ class IntentPredictor:
         if shown:self.current=Anticipation(target,now,fixation['at'],float(min(1.,.45+margin*.2)),source='gaze')
         if now-self.last_snapshot>=.045:
             self.snapshots.append(dict(channel='gaze',at=now,elements=elements,x=x.copy(),best=best,
-                                       prior=int(np.argmax(x@GAZE_PRIOR)),shown=shown,point=point,
+                                       prior=int(np.argmax(x@GAZE_PRIOR)),point=point,
                                        radius=fixation['radius']))
             self.last_snapshot=now
         return self.current
@@ -300,7 +285,7 @@ class IntentPredictor:
                    and not target.rect.contains(*point))
         if shown:self.current=Anticipation(target,now,last.captured,float(min(1.,.45+margin*.2)))
         if now-self.last_snapshot>=.045:
-            self.snapshots.append(dict(channel='mouse',at=now,elements=elements,x=x.copy(),best=best,prior=int(np.argmax(x@PRIOR)),shown=shown,pointer=tuple(point)))
+            self.snapshots.append(dict(channel='mouse',at=now,elements=elements,x=x.copy(),best=best,prior=int(np.argmax(x@PRIOR)),pointer=tuple(point)))
             self.last_snapshot=now
         return self.current or self._predict_gaze(scene,gaze,now,fixation)
 
@@ -335,9 +320,6 @@ class IntentPredictor:
                 label=label_for(early);hit=label is not None and early['best']==label
                 model.evaluated+=1;model.hits+=int(hit)
                 model.prior_hits+=int(label is not None and early['prior']==label)
-                model.shown+=int(early['shown']);model.shown_hits+=int(hit and early['shown'])
-                model.unmapped+=int(label is None)
-                if channel=='mouse':model.lead_sum_ms+=(click.pressed-early['at'])*1000
                 changed=True
             train_rows=channel_rows
             if channel=='gaze':

@@ -156,7 +156,7 @@ class Reranker:
         return {'model': MANIFEST['model'], 'revision': MANIFEST['revision'], 'device': 'cpu',
                 'scoreType': MANIFEST['scoreType'], 'scores': results,
                 'inferenceMs': round(inference_ms), 'elapsedMs': round((time.perf_counter() - started) * 1000),
-                'truncatedQuery': False, 'truncatedContext': truncated_context, 'truncatedDocuments': truncated_documents}
+                'truncatedContext': truncated_context, 'truncatedDocuments': truncated_documents}
 
 
 def _input_chunks(descriptor, cancelled):

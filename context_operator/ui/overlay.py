@@ -81,10 +81,6 @@ def light_brush(center,radius,color,alpha):
     return QBrush(gradient)
 
 
-def paint_light(painter,elements,center,radius,selected=None,energy=0.,strengths=None,cache=None):
-    """One gradient spans all objects; the light itself is never drawn."""
-    (cache or LIGHT_CACHE).paint(painter,elements,center,radius,selected,energy,strengths)
-
 
 def paint_scene_light(painter,scene,center,radius,now,selected=None,energy=0.,origin=(0,0),scale=1.,strengths=None,prediction=None,cache=None):
     """One light field, clipped to the currently exposed parts of each window."""
@@ -108,7 +104,7 @@ def paint_scene_light(painter,scene,center,radius,now,selected=None,energy=0.,or
         if point:
             nearby=[(e.id,project(e.rect)) for e in elements if e.enabled and 0<=now-(e.captured or stamp)<(MAP_TTL if scene.windows else SCENE_TTL)
                     and e.rect.x+e.rect.w>=left and e.rect.x<=right and e.rect.y+e.rect.h>=top and e.rect.y<=bottom]
-            paint_light(painter,nearby,point,radius*scale,selected,energy,strengths,cache)
+            (cache or LIGHT_CACHE).paint(painter,nearby,point,radius*scale,selected,energy,strengths)
         painter.restore()
 
 

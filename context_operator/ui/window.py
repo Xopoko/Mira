@@ -1094,7 +1094,8 @@ class Window(QMainWindow):
         else:
             pill = ('go', 'Tracking') if phone_state == 'go' else ('standby', 'Waiting for your gaze' if has_frames else 'Connecting')
             idle = ('Tracking is paused', 'Select Start to see where you’re looking.', False)
-        if c.gaze_source_mode == 'webcam':
+        # The mode outlives a missed frame so a command already begun keeps its source; "tracking" needs a live point.
+        if c.gaze_source_mode == 'webcam' and c.gaze is not None:
             status += ' Using webcam.'
             pill = ('go', 'Tracking with webcam')
         self.state_pill.set_state(*pill)
@@ -1212,8 +1213,7 @@ class Window(QMainWindow):
         elif predictor.error:
             prediction_status='Prediction learning is unavailable.'
         else:
-            readiness='Ready.' if predictor.model.learned or predictor.gaze_model.learned else 'Not enough clicks yet.'
-            prediction_status='Mira suggests a likely next target in purple and learns from your clicks. '+readiness
+            prediction_status='Mira suggests a likely next target in purple and learns from your clicks.'
         self.prediction_plain_status.setText(prediction_status)
         self.prediction_status.setText(predictor.status)
         self.undo_learning.setEnabled(bool(c.learning.undo))

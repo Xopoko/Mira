@@ -12,9 +12,9 @@ class Fusion:
         self.pending=None
         self.pending_since=0.
         self._selection=None
-        # Magnetic focus is deliberately separate from the legacy hysteresis.
-        # It remembers the selected element's full identity and the gaze frame
-        # at which that selection was acquired.
+        # Magnetic focus keeps its own state, apart from the hysteresis above:
+        # the selected element's full identity and the gaze frame at which
+        # that selection was acquired.
         self._magnetic_identity=None
         self._magnetic_anchor=None
         self._magnetic_pending=None

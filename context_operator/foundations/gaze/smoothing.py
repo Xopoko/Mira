@@ -9,23 +9,19 @@ import numpy as np
 
 
 class Smoother:
-    """Time-aware adaptive smoother with the legacy Smoother call contract.
-
-    ``point`` and ``last`` remain available to callers. ``scale`` is the
-    physical screen height in pixels; filter frequencies are tuned in screen
-    heights per second.
+    """``scale`` is the physical screen height in pixels; filter frequencies
+    are tuned in screen heights per second.
     """
 
-    def __init__(self, tau=0.065, *, scale=1440.0, beta=3.0,
-                 derivative_cutoff=1.0, max_gap=0.25):
-        if not all(math.isfinite(value) and value > 0 for value in
-                   (tau, scale, beta, derivative_cutoff, max_gap)):
+    beta = 3.0
+    derivative_cutoff = 1.0
+    max_gap = 0.25
+
+    def __init__(self, tau=0.065, *, scale=1440.0):
+        if not all(math.isfinite(value) and value > 0 for value in (tau, scale)):
             raise ValueError("smoothing parameters must be finite and positive")
         self.scale = float(scale)
         self.min_cutoff = 1.0 / (2.0 * math.pi * float(tau))
-        self.beta = float(beta)
-        self.derivative_cutoff = float(derivative_cutoff)
-        self.max_gap = float(max_gap)
         self.reset()
 
     def reset(self):
