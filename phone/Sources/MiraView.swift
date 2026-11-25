@@ -155,12 +155,15 @@ struct PhoneView: View {
                             .accessibilityElement(children: .combine)
                         }
                         .padding(.vertical, 8)
+                        .onTapGesture { tracker.revealScreen() }
                     }
                     Section {
                         StatusRow(level: tracker.tracked ? .live : (tracker.running ? .waiting : .off), name: "iPhone",
                                   value: tracker.running ? (tracker.tracked ? "Eyes and head tracked" : "Looking for your face") : "Camera off")
+                            .onTapGesture { tracker.revealScreen() }
                         StatusRow(level: tracker.computerConnected ? .live : (tracker.running ? .waiting : .off),
                                   name: "Windows PC", value: tracker.connectionText)
+                            .onTapGesture { tracker.revealScreen() }
                     }
                     Section {
                         NavigationLink {
@@ -201,7 +204,6 @@ struct PhoneView: View {
                 .accessibilityLabel("Restore screen brightness")
             }
         }
-        .simultaneousGesture(TapGesture().onEnded { tracker.revealScreen() })
         .onChange(of: reading) { _, _ in tracker.revealScreen() }
         .task(id: tracker.dimGeneration) {
             guard tracker.running, !reading else { return }
