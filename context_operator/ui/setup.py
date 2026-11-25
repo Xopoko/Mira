@@ -377,22 +377,19 @@ class SetupWindow(QMainWindow):
         elif report:
             message = (f"Offset {report['bias_px'][0]:+.0f}/{report['bias_px'][1]:+.0f} px · "
                        f"jitter {report['jitter_px']:.0f} px · coverage {report['coverage']:.0%}")
-        elif phase == 'fit':
-            message = ('Creating your gaze profile…' if self.fit_worker and self.fit_worker.is_alive() else
-                       'Profile ready to check on five new points.' if self.candidate else
-                       'Setup points saved. Mira will rebuild the profile and start the check again.')
-        elif self.running:
-            if ready:
-                message = self.session.hold_reason or 'Keep looking at the center of the point until the ring fills.'
-            else:
-                message = (sample.error or sample.reason if sample else '') or 'Waiting for iPhone'
-        elif ready:
-            message = 'Mira sees your eyes. Start when you’re comfortable.'
+        elif phase == 'fit' and self.fit_worker and self.fit_worker.is_alive():
+            message = 'Creating your gaze profile…'
         elif sample is not None and sample.error:
+            # The check cannot start without the phone, so its error comes before "ready to check".
             connection_error = True
             message = sample.error
             if self.c.settings.get('phone_transport') == 'wifi':
                 message += ' To enter the address manually, close setup and open Connection settings.'
+        elif phase == 'fit':
+            message = ('Profile ready to check on five new points.' if self.candidate else
+                       'Setup points saved. Mira will rebuild the profile and start the check again.')
+        elif ready:
+            message = 'Mira sees your eyes. Start when you’re comfortable.'
         elif sample is not None:
             message = sample.reason or 'Connecting to iPhone…'
         else:
@@ -410,8 +407,8 @@ class SetupWindow(QMainWindow):
             self.guide_body.setText('Mira checked five new points from the seat you used in setup. '
                                    'It works best for broad areas such as panels and large buttons, '
                                    'and clicking near where you look refines it as you use Mira.'
-                                   if usable else '\n'.join(report.get('problems', [])) +
-                                   '\n\n' + kept + 'Measurements saved for review.')
+                                   if usable else '\n'.join(report.get('problems', [])) + '\n\n' + kept +
+                                   ('' if self.error else 'Measurements saved for review.'))
         elif phase == 'fit':
             self.guide_heading.setText('Check your gaze' if self.candidate else 'Build your gaze setup')
             self.guide_body.setText('Look at five new points the same way you did in setup. '

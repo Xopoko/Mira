@@ -173,6 +173,11 @@ class OutputTests(unittest.TestCase):
         self.assertEqual([(e.type, e.ki.vk, e.ki.scan, e.ki.flags) for e in keys],
                          [(1, 0, unit, flags) for unit in (0x48, 0x69, 0x20, 0xD83D, 0xDE42)
                           for flags in (4, 6)])
+    def test_dictation_past_a_button_is_reported_for_the_window_not_the_button(self):
+        output, button, scene = self.pointer_click_fixture()
+        result = output.execute(Intent('type_text', text='Hi', target_id=button.id), button, replace(scene, title='Notes'))
+        output.win.send.assert_called_once()
+        self.assertEqual(result['target'], 'Notes')
     def test_failed_field_focus_never_types(self):
         output=WindowsOutput.__new__(WindowsOutput);output.win=Mock();output.win.shift_down.return_value=False;output.validate_visual=Mock()
         output.semantic=Mock(return_value=False);output.is_active=lambda:True

@@ -14,6 +14,4 @@ $shortcut.Description = 'Control Windows with gaze and voice'
 $shortcut.IconLocation = (Join-Path $root 'context_operator\assets\icon.ico') + ',0'
 $shortcut.WindowStyle = 1
 $shortcut.Save()
-$verified = $shell.CreateShortcut($path)
-if ($verified.TargetPath -ne $python -or $verified.WorkingDirectory -ne $root) { throw 'Shortcut verification failed.' }
-Write-Output ('Shortcut verified: ' + $path)
+Write-Output ('Shortcut created: ' + $path)

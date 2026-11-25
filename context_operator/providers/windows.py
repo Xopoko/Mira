@@ -1,4 +1,4 @@
-"""Windows UIA + physical input. MyOperator's coordinate/freshness rules, without MCP."""
+"""Window geometry and input for Windows: UI Automation calls first, synthetic input otherwise."""
 import ctypes as C
 from ctypes import wintypes as W
 import hashlib
@@ -31,7 +31,6 @@ class Windows:
             'IsIconic':([W.HWND],W.BOOL),'SetForegroundWindow':([W.HWND],W.BOOL),
             'ShowWindow':([W.HWND,C.c_int],W.BOOL),
             'SendInput':([W.UINT,C.POINTER(INPUT),C.c_int],W.UINT),
-            'FindWindowW':([W.LPCWSTR,W.LPCWSTR],W.HWND),
             'SetWindowDisplayAffinity':([W.HWND,W.DWORD],W.BOOL),
             'SetWindowLongW':([W.HWND,C.c_int,W.LONG],W.LONG),
             'GetWindowLongW':([W.HWND,C.c_int],W.LONG),
@@ -227,7 +226,9 @@ class WindowsOutput:
             else:
                 raise RuntimeError(f'Action is unavailable ({action})')
         elif action=='type_text':
-            if target and target.role=='Edit':
+            # Only an edit field is focused first. Otherwise the text goes to the window's current focus.
+            typed_into=target if target and target.role=='Edit' else None
+            if typed_into:
                 x,y=target.rect.center
                 if self.win.at(x,y)!=hwnd:raise RuntimeError('The input field is covered')
                 self.validate_visual(target)
@@ -258,4 +259,5 @@ class WindowsOutput:
             self._send([self.win.key(vk=k,flags=extended(k)) for k in keys]+[self.win.key(vk=k,flags=2|extended(k)) for k in reversed(keys)])
         else:
             raise RuntimeError(f'Action is unavailable ({action})')
-        return {'target':target.label if target else scene.title,'route':'native'}
+        if action=='type_text':target=typed_into
+        return {'target':target.label if target else window.title if window else scene.title,'route':'native'}

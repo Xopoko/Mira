@@ -24,7 +24,6 @@ def main():
     if socket.waitForConnected(150):socket.write(b'show');socket.waitForBytesWritten(100);return 0
     QLocalServer.removeServer('ContextOperator.Desktop');server=QLocalServer();server.listen('ContextOperator.Desktop')
     window=Window(Controller(load()))
-    if '--gaze-settings' in sys.argv:window.navigate(3)
     def show_existing():
         connection=server.nextPendingConnection()
         if connection:connection.disconnectFromServer();connection.deleteLater()
