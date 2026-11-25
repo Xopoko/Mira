@@ -20,8 +20,10 @@
   are numbers, and the frame stays on the phone. Gaze setup records them with
   each point, and `scripts/evaluate_gaze_setup.py` scores a recorded setup
   with ARKit's eye rotation and with the measured iris side by side. This is
-  an experiment to find out whether Mira's own measurement beats ARKit's.
-  Tracking does not use it yet. The iPhone companion is at 0.4.2.
+  an experiment to find out whether Mira's own measurement beats ARKit's. On
+  the first setup recorded this way it did not: with the phone below the
+  screen, ARKit's eye rotation was about twice as accurate. Tracking keeps
+  using ARKit. The iPhone companion is at 0.4.2.
 - Redesign the Windows app as a dark companion app. **Overview** now leads
   with a live preview of your screen beside the iPhone, accuracy and quick
   settings. **Profile** is now **Calibration**, the highlight settings moved

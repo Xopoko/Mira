@@ -140,10 +140,19 @@ stores the reading and the profiles with every fixation, and
 This is an experiment, and tracking still uses ARKit's eye rotation. One
 degree of eye rotation moves the iris by about 0.18 mm, which at 60 cm is
 0.4 of a frame pixel, so the fit has to hold to a small part of a pixel to
-beat ARKit. On rendered eyes the centre typically lands within 0.2 px of the
-true one, and within 0.45 px in hard scenes such as an iris in the corner of
-the eye or a dim room. Whether a phone on a desk reaches that is what
-recorded setups have to show.
+beat ARKit. On rendered eyes it does: the centre typically lands within
+0.2 px of the true one.
+
+On the first setup recorded with a real phone, standing below a 5120×1440
+screen, it does not. Within one fixation ARKit's eye direction moves by what
+would be 0.2 px in the frame, and the measured iris centre by about 1 px.
+Fixations held out of the fit land 116 px from their targets with ARKit and
+261 px with the measured iris, and both irises are found in 73 % of the
+frames. The view is the reason. From below the screen the camera sees each
+eye 45–60° off its axis. At most targets only one side of the iris has white
+next to it, the edge is a soft step four to five pixels wide, and what the
+search finds is often a lid or the pupil. A phone near the line of sight
+would see the eyes better, but Mira does not ask where the phone stands.
 
 While tracking, an observation is supported when the head is within 20 cm of a
 head position seen in setup, 8 cm when the screen size was fitted, and turned
