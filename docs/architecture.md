@@ -75,14 +75,21 @@ large far screen from a small near one, so a fitted size is trusted only within
 8 cm of the setup positions. Several monitors are treated as one flat surface
 with one pixel size, which is less accurate where they meet at an angle.
 
+What the plane leaves over is not random. The error drifts slowly across the
+screen and repeats from one setup to the next, so the profile adds a smooth
+field through the leftover error at the thirteen setup points. It reaches
+about half a screen height from each point and fades to nothing beyond.
+
 The five check targets, which the fit never sees, give the median and
 90th-percentile error, jitter and coverage. A setup within the limits is
 `usable` and can be adopted. `passed` stays false for every setup: five points
-show that it is usable, not that it is accurate. Seven recorded setups from one
-49-inch 5120×1440 screen, replayed with `scripts/evaluate_gaze_setup.py`, give
-a typical check error of 130–310 px, 190 px on average, where the affine map
-Mira used before gave 370 px. That is close to the 3° that published
-measurements of ARKit gaze report.
+show that it is usable, not that it is accurate. Seven recorded nine-point
+setups from one 49-inch 5120×1440 screen, replayed with
+`scripts/evaluate_gaze_setup.py`, give a typical check error of 120–250 px,
+170 px on average, where the affine map Mira used before gave 370 px. The
+first thirteen-point setup on that screen replays at 117 px, against 189 px
+for the plane alone. Published measurements of ARKit gaze report about 3°,
+which is roughly 190 px there.
 
 While tracking, an observation is supported when the head is within 20 cm of a
 head position seen in setup, 8 cm when the screen size was fitted, and turned

@@ -11,9 +11,9 @@ from scipy.optimize import least_squares
 # ARKit reports larger eye rotations than the eye makes. These are the typical
 # corrections; each setup may move them a little.
 EYE_GAIN = (.65, .85)
-GAIN_SIGMA = .08
+GAIN_SIGMA = .03
 SIZE_SIGMA = .35
-FACING_SIGMA = np.radians(15)
+FACING_SIGMA = np.radians(8)
 NOISE_RAD = np.radians(1.5)
 PIXEL_RANGE_MM = (.05, 1.2)
 VIEWING_RANGE_M = (.15, 3.)

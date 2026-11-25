@@ -67,6 +67,20 @@ class StarterTests(unittest.TestCase):
         grazing[13:19] = [1, 0, .01, 1, 0, .01]
         self.assertTrue(np.isnan(profile.predict(grazing)).all())
 
+    def test_slow_drift_left_by_the_plane_is_corrected_between_setup_points(self):
+        def drift(points):
+            return np.c_[40*np.sin(points[:, 0]/BOUNDS.w*np.pi), 50*np.cos(points[:, 1]/BOUNDS.h*np.pi)]
+        targets = pixels(StarterSession.train_targets)
+        bursts, origins = zip(*(burst(target, BOUNDS) for target in targets))
+        profile = StarterProfile.fit(bursts, origins, targets+drift(targets), METADATA, PIXEL_MM)
+        checks = pixels(StarterSession.check_targets)
+        rows = np.asarray([feature_for(target) for target in checks])
+        plane = geometry.project(rows, profile.display, profile.arrays['frame'], profile.arrays['center'],
+                                 profile.settings['pixel_m'], profile.arrays['eye_offsets'], profile.arrays['gains'])
+        wanted = checks+drift(checks)
+        self.assertLess(np.linalg.norm(profile.predict(rows)-wanted, axis=1).mean(),
+                        np.linalg.norm(plane-wanted, axis=1).mean()/2)
+
     def test_one_stray_frame_does_not_fail_setup(self):
         targets = pixels(StarterSession.train_targets)
         bursts, origins = zip(*(burst(target, BOUNDS) for target in targets))

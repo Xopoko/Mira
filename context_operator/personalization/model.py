@@ -9,23 +9,34 @@ from . import geometry
 from .session import STARTER_PROTOCOL
 
 
+def _kernel(a, b, reach):
+    return np.exp(-((a[:, None]-b[None])**2).sum(axis=2)/(2*reach**2))
+
+
 class StarterProfile:
     """Screen plane and eye correction fitted from the setup fixations.
 
     Head pose and eye rotation stay separate, so a point looked at by turning
     the head and the same point looked at with the eyes alone land on the same
     pixel, and a moderate change of seat keeps the mapping.
+
+    What the plane leaves over drifts slowly across the screen and repeats
+    between setups, so a smooth field through the leftover error at each setup
+    point is added on top. It fades to nothing away from those points.
     """
 
     MODEL_KIND = 'screen_geometry_v1'
-    VERSION = 3
+    VERSION = 4
     MIN_TARGETS = 6
     POSITION_TOLERANCE_M = .2
     # One seat cannot tell a large far screen from a small near one, so a
     # fitted size is trusted only close to that seat.
     FITTED_SIZE_TOLERANCE_M = .08
     ROTATION_TOLERANCE = .6
-    ARRAYS = ('mean', 'scale', 'training_x', 'training_y', 'frame', 'center', 'eye_offsets', 'gains')
+    # Reach of one fixation's leftover error, as a share of the screen height.
+    CORRECTION_REACH = .5
+    ARRAYS = ('mean', 'scale', 'training_x', 'training_y', 'frame', 'center', 'eye_offsets', 'gains',
+              'landed', 'correction')
 
     def __init__(self, arrays, metadata, settings):
         try:
@@ -34,6 +45,7 @@ class StarterProfile:
             frame = np.asarray(arrays['frame'], dtype=float)
             pixel_m = float(settings['pixel_m'])
             tolerances = [float(settings['position_tolerance_m']), float(settings['rotation_tolerance'])]
+            reach = float(settings['correction_reach_px'])
             valid = (settings.get('model_kind') == self.MODEL_KIND and
                      metadata.get('protocol') == STARTER_PROTOCOL and metadata.get('features') == 22 and
                      arrays['mean'].shape == (22,) and arrays['scale'].shape == (22,) and
@@ -41,17 +53,20 @@ class StarterProfile:
                      len(training_x) >= self.MIN_TARGETS and training_y.shape == (len(training_x), 2) and
                      frame.shape == (3, 3) and arrays['center'].shape == (3,) and
                      arrays['eye_offsets'].shape == (2, 3) and arrays['gains'].shape == (2,) and
+                     arrays['landed'].shape == training_y.shape and
+                     arrays['correction'].shape == training_y.shape and
                      all(np.isfinite(arrays[name]).all() for name in self.ARRAYS) and
                      np.allclose(frame.T@frame, np.eye(3), atol=1e-6) and
                      np.all(arrays['scale'] > 0) and np.all(arrays['gains'] > 0) and
-                     np.isfinite([pixel_m, *tolerances]).all() and pixel_m > 0 and min(tolerances) > 0)
+                     np.isfinite([pixel_m, reach, *tolerances]).all() and
+                     min(pixel_m, reach, *tolerances) > 0)
         except (KeyError, TypeError, ValueError, AttributeError):
             valid = False
         if not valid:
             raise ValueError('Invalid gaze profile')
         self.arrays, self.metadata = arrays, metadata
         self.settings = dict(settings, pixel_m=pixel_m, position_tolerance_m=tolerances[0],
-                             rotation_tolerance=tolerances[1])
+                             rotation_tolerance=tolerances[1], correction_reach_px=reach)
         self.training_x, self.training_y = training_x, training_y
         self.display = np.asarray(metadata['display'], dtype=float)
 
@@ -72,6 +87,13 @@ class StarterProfile:
                     for f, e in zip(frames, eyes))):
             raise ValueError('Gaze setup needs steady fixations on every point')
         screen = geometry.fit(frames, eyes, y, display, pixel_mm)
+        landed = np.asarray([np.nanmedian(geometry.project(
+            f, display, screen['frame'], screen['center'], screen['pixel_m'],
+            screen['eye_offsets'], screen['gains']), axis=0) for f in frames])
+        reach = cls.CORRECTION_REACH*display[3]
+        # Equal signal and noise: about half of a lone fixation's error is
+        # taken as real, the rest as that fixation's own scatter.
+        correction = np.linalg.solve(_kernel(landed, landed, reach)+np.eye(len(landed)), y-landed)
         medians = np.asarray([np.median(f, axis=0) for f in frames])
         floors = np.full(22, .005)
         floors[4:7] = .02
@@ -80,10 +102,12 @@ class StarterProfile:
         arrays = {'mean': medians.mean(axis=0), 'scale': np.maximum(medians.std(axis=0), floors),
                   'training_x': medians, 'training_y': y, 'frame': screen['frame'],
                   'center': screen['center'], 'eye_offsets': screen['eye_offsets'],
-                  'gains': np.asarray(screen['gains'], dtype=float)}
+                  'gains': np.asarray(screen['gains'], dtype=float),
+                  'landed': landed, 'correction': correction}
         settings = {'version': cls.VERSION, 'model_kind': cls.MODEL_KIND,
                     'pixel_m': screen['pixel_m'], 'screen_size_known': screen['known_size'],
                     'viewing_m': screen['viewing_m'], 'fit_error_px': screen['fit_error_px'],
+                    'correction_reach_px': float(reach),
                     'position_tolerance_m': (cls.POSITION_TOLERANCE_M if screen['known_size']
                                              else cls.FITTED_SIZE_TOLERANCE_M),
                     'rotation_tolerance': cls.ROTATION_TOLERANCE}
@@ -93,6 +117,9 @@ class StarterProfile:
         x = np.asarray(features, dtype=float)
         predicted = geometry.project(x, self.display, self.arrays['frame'], self.arrays['center'],
                                      self.settings['pixel_m'], self.arrays['eye_offsets'], self.arrays['gains'])
+        hit = np.isfinite(predicted).all(axis=1)
+        predicted[hit] += _kernel(predicted[hit], self.arrays['landed'],
+                                  self.settings['correction_reach_px'])@self.arrays['correction']
         return predicted[0] if x.ndim == 1 else predicted
 
     def supports(self, features):
