@@ -7,6 +7,7 @@ WINDOWS_ACTIONS = TARGET_ACTIONS | {'type_text', 'press_keys'}
 SCROLL_DIRECTIONS = ('up', 'down')
 SCENE_TTL = 3.
 MAP_TTL = 1.25
+GAZE_TTL = .2
 
 @dataclass(frozen=True)
 class Rect:
@@ -100,7 +101,6 @@ class Gaze:
     captured: float
     radius: float = 230
     source: str = 'iphone'
-    valid: bool = True
 
 @dataclass(frozen=True)
 class GazeMeasurement:

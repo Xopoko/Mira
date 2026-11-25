@@ -5,7 +5,7 @@ import hashlib
 import threading
 import time
 from PySide6.QtCore import QObject, Signal, QTimer
-from .core.contracts import Focus, Gaze, GazeMeasurement, Element, Rect, Intent, TARGET_ACTIONS
+from .core.contracts import Focus, Gaze, GazeMeasurement, Element, Rect, Intent, TARGET_ACTIONS, GAZE_TTL, MAP_TTL
 from .core.fusion import Fusion
 from .core.webcam import GazeArbitrator
 from .core.commands import quick_intent
@@ -163,7 +163,7 @@ class Controller(QObject):
                     region=None;gaze=self.attention
                     scene=provider.vision_scene(scene,gaze,time.monotonic())
                     if scene is None:continue
-                    if gaze and 0<=time.monotonic()-gaze.captured<.25:
+                    if gaze and 0<=time.monotonic()-gaze.captured<GAZE_TTL:
                         region=Rect(round(gaze.x/160)*160-480,round(gaze.y/160)*160-320,960,640)
                     captured=provider.capture(scene,region)
                     if captured is None:continue
@@ -370,7 +370,7 @@ class Controller(QObject):
             else:self.anticipation.feedback(event,now)
         measurement=self.phone.measurement if self.phone else None
         supported=(not self.phone or isinstance(measurement,GazeMeasurement) and
-                   measurement.supported and 0<=now-measurement.captured<.2)
+                   measurement.supported and 0<=now-measurement.captured<GAZE_TTL)
         self.prediction=self.anticipation.predict(self.scene,self.gaze,now,gaze_supported=supported)
 
     def _learn_clicks(self,measurement,now,events=None):
@@ -501,7 +501,7 @@ class Controller(QObject):
         if generation!=self.generation or not self.running or epoch!=self.action_epoch:return
         now=time.monotonic();extras=[]
         for e in self.vision_elements:
-            if not 0<=now-(e.captured or self.vision_at)<1.25:continue
+            if not 0<=now-(e.captured or self.vision_at)<MAP_TTL:continue
             window=scene.window_map(e.window)
             if scene.windows:
                 if not window or self.vision_sources.get(e.window)!=self._window_signature(scene,e.window):continue
@@ -525,7 +525,7 @@ class Controller(QObject):
         source,started,elements,epoch=event
         if generation!=self.generation or not self.scene:return
         if epoch!=self.action_epoch:return
-        if time.monotonic()-started>1.25:return
+        if time.monotonic()-started>MAP_TTL:return
         if self._window_signature(source,source.window)!=self._window_signature(self.scene,source.window):return
         self.vision_elements=tuple(e for e in self.vision_elements if e.window!=source.window)+elements
         self.vision_sources[source.window]=self._window_signature(source,source.window);self.vision_at=started
@@ -555,7 +555,7 @@ class Controller(QObject):
         kind=event.get('type')
         if kind=='speech_start':
             now=time.monotonic();gaze=self.attention
-            if not (gaze and gaze.valid and 0<=now-gaze.captured<.25):gaze=None
+            if not (gaze and 0<=now-gaze.captured<GAZE_TTL):gaze=None
             focus=self.focus
             if focus.target and (not self.scene or not self.scene.current_target(focus.target,now)):
                 focus=Focus()
@@ -626,7 +626,7 @@ class Controller(QObject):
         # A transient empty scene after dispatch or a blink does not re-arm dwell.
         if target_key and self.dwell_fired and target_key!=self.dwell_fired:self.dwell_fired=None
         if (self.settings.get('dwell_enabled') and not self.mouse_control and target and not self.focus.ambiguous
-                and self.attention and self.attention.valid and 0<=now-self.attention.captured<.25
+                and self.attention and 0<=now-self.attention.captured<GAZE_TTL
                 and not self.fusion.selection_until(target,now,self.attention) and not self.busy and not self.output_pending):
             if target.identity!=self.dwell_id:self.dwell_id=target.identity;self.dwell_since=now
             elif self.dwell_fired!=target_key and now-self.dwell_since>self.settings['dwell_ms']/1000:
@@ -688,7 +688,7 @@ class Controller(QObject):
         focus=latched if latched is not None else self.focus
         started=time.monotonic();generation=self.generation;source_epoch=self.gaze_source_epoch
         gaze=latched_gaze if latched is not None or latched_gaze is not None else self.attention
-        max_gaze_age=15 if latched_gaze is not None else .25
+        max_gaze_age=15 if latched_gaze is not None else GAZE_TTL
         if focus.target and not self.scene.current_target(focus.target,started):
             focus=Focus()
         selected=bool(self.fusion.selection_until(focus.target,started,gaze))
@@ -696,7 +696,7 @@ class Controller(QObject):
             if quick.action=='select':
                 target=self.fusion.cycle(focus,started,quick.direction)
                 self.status='Selected: '+target.label if target else 'No nearby element';return
-            if quick.action in TARGET_ACTIONS and not selected and not (gaze and gaze.valid and 0<=started-gaze.captured<max_gaze_age):
+            if quick.action in TARGET_ACTIONS and not selected and not (gaze and 0<=started-gaze.captured<max_gaze_age):
                 self.message.emit('Gaze','Look at the element again or say its name.');return
             if quick.action in TARGET_ACTIONS and not focus.target:
                 self.message.emit('Target','Look at an element or say its name.');return

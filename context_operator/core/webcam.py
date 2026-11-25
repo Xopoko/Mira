@@ -6,7 +6,7 @@ probability. A second camera never changes a healthy primary's coordinates.
 from dataclasses import dataclass
 import math
 
-from .contracts import Gaze
+from .contracts import Gaze, GAZE_TTL
 
 
 @dataclass(frozen=True)
@@ -26,9 +26,9 @@ class GazeChoice:
 
 def fresh(gaze, now):
     try:
-        return (isinstance(gaze, Gaze) and gaze.valid
+        return (isinstance(gaze, Gaze)
                 and all(not isinstance(v,bool) and math.isfinite(v) for v in (gaze.x, gaze.y, gaze.captured, gaze.radius, now))
-                and gaze.radius > 0 and 0 <= now - gaze.captured < .20)
+                and gaze.radius > 0 and 0 <= now - gaze.captured < GAZE_TTL)
     except (TypeError,ValueError):
         return False
 

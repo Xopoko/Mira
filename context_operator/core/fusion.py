@@ -1,7 +1,7 @@
 """Choose a fresh screen element from gaze, text or an explicit selection."""
 import math
 import re
-from .contracts import Focus, RankedTarget, SCENE_TTL
+from .contracts import Focus, RankedTarget, GAZE_TTL, SCENE_TTL
 
 def words(text): return set(re.findall(r'[\w]+', text.casefold()))
 
@@ -44,8 +44,8 @@ class Fusion:
             return 0.
         if not requires_gaze:
             return until
-        if gaze is not None and gaze.valid and 0 <= now-gaze.captured < .25:
-            return min(until,gaze.captured+.25)
+        if gaze is not None and 0 <= now-gaze.captured < GAZE_TTL:
+            return min(until,gaze.captured+GAZE_TTL)
         return 0.
 
     def _magnetic_select(self, ranked, best, gaze):
@@ -138,7 +138,7 @@ class Fusion:
         self.reset()
         if scene is None or not 0<=now-scene.captured<SCENE_TTL:
             return Focus(reason='Updating the screen map')
-        if pointer is None or not pointer.valid or not 0<=now-pointer.captured<.25:
+        if pointer is None or not 0<=now-pointer.captured<GAZE_TTL:
             return Focus(reason='No mouse pointer')
         candidates=[e for e in scene.current_elements(now) if e.enabled and e.rect.w>0 and e.rect.h>0
                     and (window is None or e.window==window) and e.rect.contains(pointer.x,pointer.y)]
@@ -152,7 +152,7 @@ class Fusion:
         if scene is None or not 0<=now-scene.captured<SCENE_TTL:
             self.reset()
             return Focus(reason='Updating the screen map')
-        valid_gaze=gaze is not None and gaze.valid and 0 <= now-gaze.captured < .25
+        valid_gaze=gaze is not None and 0 <= now-gaze.captured < GAZE_TTL
         if magnetic and gaze is not None and not valid_gaze:
             self.reset()
         if magnetic and valid_gaze and any(not math.isfinite(v) for v in (gaze.x,gaze.y,gaze.radius)):

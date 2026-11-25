@@ -10,7 +10,7 @@ import math
 import struct
 import time
 
-from ..core.contracts import Gaze, GazeMeasurement, Rect
+from ..core.contracts import GAZE_TTL, Gaze, GazeMeasurement, Rect
 
 MAPPING_NAME = r"Local\ContextOperator.Gaze.v1"
 LOCK_NAME = r"Local\ContextOperator.Gaze.v1.Lock"
@@ -20,7 +20,6 @@ PACKET_SIZE = 128
 MAGIC = b"COGAZE1\0"
 VERSION = 1
 FLAG_ACTIVE = 1
-MAX_AGE_S = 0.20
 
 
 def _finite(value):
@@ -54,7 +53,7 @@ def pack_packet(sequence, captured_s, published_s, gaze_x=0.0, gaze_y=0.0,
             raise ValueError("active gaze values and desktop bounds must be finite")
         gaze_x, gaze_y, radius = float(gaze_x), float(gaze_y), float(radius)
         age = float(published_s) - float(captured_s)
-        if age < 0 or age >= MAX_AGE_S - 1e-12:
+        if age < 0 or age >= GAZE_TTL - 1e-12:
             raise ValueError("active gaze timestamp is future-dated or stale")
         desktop_x, desktop_y, desktop_w, desktop_h = desktop_values
         if desktop_w <= 0 or desktop_h <= 0 or radius <= 0:
@@ -83,7 +82,7 @@ def eligible_gaze(gaze, measurement, desktop, now, *, phone_present,
     desktop_values = _desktop_values(desktop)
     if desktop_values is None:
         return False
-    if not gaze.valid or gaze.source != "iphone" or not measurement.supported:
+    if gaze.source != "iphone" or not measurement.supported:
         return False
     try:
         if len(measurement.features) != 22 or len(measurement.point) != 2:
@@ -95,7 +94,7 @@ def eligible_gaze(gaze, measurement, desktop, now, *, phone_present,
     if not _finite(now) or not _finite(gaze.captured) or not _finite(measurement.captured):
         return False
     age = float(now) - float(gaze.captured)
-    if age < 0 or age >= MAX_AGE_S - 1e-12:
+    if age < 0 or age >= GAZE_TTL - 1e-12:
         return False
     # Corrected gaze keeps the source frame timestamp. A mismatch means that
     # the point and the supported TrueDepth measurement do not describe one frame.

@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
+from ..core.contracts import GAZE_TTL
 from ..foundations.gaze.arkit import ENGINE_VERSION
 
 
@@ -215,11 +216,11 @@ class StarterSession:
             self.ready_to_confirm = False
             return
         fresh = (not sample.error and not sample.blink and seq > self.last_seq and
-                 0 <= now-captured < .20 and captured >= self.settle_until and
+                 0 <= now-captured < GAZE_TTL and captured >= self.settle_until and
                  x.shape == (22,) and origins.shape == (2, 3) and
                  np.isfinite(x).all() and np.isfinite(origins).all())
         if not fresh:
-            if self.frames and (seq > self.last_seq or not 0 <= now-captured < .20):
+            if self.frames and (seq > self.last_seq or not 0 <= now-captured < GAZE_TTL):
                 self.frames.clear()
                 self.ready_to_confirm = False
             return
@@ -254,7 +255,7 @@ class StarterSession:
 
     def confirm(self, now):
         if (not self.ready_to_confirm or not self.frames or
-                not 0 <= now-self.frames[-1].captured < .20):
+                not 0 <= now-self.frames[-1].captured < GAZE_TTL):
             return False
         # Persist a small, evenly spaced numeric burst across the qualified
         # interval. Full frame rate is used for the fixation test only.

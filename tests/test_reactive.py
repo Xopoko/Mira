@@ -60,7 +60,7 @@ class FastTests(unittest.TestCase):
         self.assertEqual(self.infer('New Tab').target_id,'new')
     def test_missing_label_cannot_click_gaze_as_substitute(self):self.assertIsNone(self.infer('open YouTube'))
     def test_deictic_command_requires_valid_gaze_or_explicit_selection(self):
-        for gaze in (None,Gaze(100,20,self.now-30),Gaze(100,20,self.now+30),Gaze(100,20,self.now,valid=False)):
+        for gaze in (None,Gaze(100,20,self.now-30),Gaze(100,20,self.now+30)):
             self.gaze=gaze
             self.assertEqual(self.infer('click here').action,'clarify')
         self.assertEqual(self.infer('click here',allow_selected=True).action,'click')

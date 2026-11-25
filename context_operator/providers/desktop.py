@@ -2,8 +2,8 @@
 from dataclasses import replace
 import queue,threading,time
 import comtypes  # Complete its implicit COM initialization before starting reader threads.
-from ..core.contracts import Scene,Rect
-from ..core.desktop import compose,intersection,MAP_TTL
+from ..core.contracts import Scene,Rect,GAZE_TTL,MAP_TTL
+from ..core.desktop import compose,intersection
 from .windows import Windows
 from .uia_reader import WindowReader,protected
 
@@ -65,7 +65,7 @@ class ScreenProvider:
             s=by_id.get(hwnd);m=self.maps[hwnd]
             if s is None or (s.pid,s.rect)!=(m.pid,m.rect) or started-m.captured>=MAP_TTL:self.maps.pop(hwnd,None)
         gaze=self.attention
-        point=(gaze.x,gaze.y) if gaze and gaze.valid and 0<=started-gaze.captured<.3 else self.win.cursor()
+        point=(gaze.x,gaze.y) if gaze and 0<=started-gaze.captured<GAZE_TTL else self.win.cursor()
         def distance(s):return min(r.distance(*point) for r in s.visible)
         # Warm every visible window; near the halo refresh more often. Oldest due work wins.
         due=[s for s in surfaces if s.window not in self.pending
@@ -82,7 +82,7 @@ class ScreenProvider:
 
     def vision_scene(self,scene,gaze,now):
         if not scene.windows:return scene
-        valid=gaze and gaze.valid and 0<=now-gaze.captured<.3
+        valid=gaze and 0<=now-gaze.captured<GAZE_TTL
         nearby=[w for w in scene.windows if not w.blocked_capture and (not valid or any(r.distance(gaze.x,gaze.y)<600 for r in w.visible))]
         if not nearby:return None
         window=min(nearby,key=lambda w:self.vision_requested.get(w.window,0))

@@ -2,7 +2,7 @@
 from collections import deque
 from dataclasses import dataclass
 import math
-from .contracts import GazeMeasurement
+from .contracts import GazeMeasurement, GAZE_TTL
 
 
 @dataclass(frozen=True)
@@ -54,11 +54,11 @@ class ClickHistory:
         return None
 
     def observe(self,sample,now,missing_at=None):
-        if (not isinstance(sample,GazeMeasurement) or not 0<=now-sample.captured<.2
+        if (not isinstance(sample,GazeMeasurement) or not 0<=now-sample.captured<GAZE_TTL
                 or len(sample.features)!=22 or len(sample.point)!=2
                 or not all(math.isfinite(v) for v in (*sample.features,*sample.point))):
             # A missing-eye observation is a barrier, not permission to reuse a fixation.
-            stamp=missing_at if isinstance(missing_at,(int,float)) and 0<=now-missing_at<.2 else now
+            stamp=missing_at if isinstance(missing_at,(int,float)) and 0<=now-missing_at<GAZE_TTL else now
             self.samples.append((stamp,None));return
         if self.samples and self.samples[-1][0]>=sample.captured:return
         self.samples.append((sample.captured,sample))

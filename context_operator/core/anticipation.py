@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import copy
 import math
 import numpy as np
-from .contracts import Element
+from .contracts import Element, GAZE_TTL
 
 PRIOR=np.array([3.,2.,.6,1.8,3.,1.2,.35,-.3,-2.,.7,.4,.3,.1,.1,.1,0.,0.,0.])
 GAZE_PRIOR=np.array([3.8,2.6,.4,.55,.35,.2,.15,.1,0.])
@@ -111,7 +111,6 @@ class GazeRanker(_Ranker):
 
 
 class IntentPredictor:
-    GAZE_MAX_AGE=.20
     GAZE_DWELL=.16
     GAZE_SPREAD=58.
 
@@ -174,8 +173,8 @@ class IntentPredictor:
         while self.trail and motion.captured-self.trail[0].captured>.3:self.trail.popleft()
 
     def _gaze_target(self,scene,gaze,now):
-        if (gaze is None or not gaze.valid or gaze.source=='mouse' or
-                not 0<=now-gaze.captured<self.GAZE_MAX_AGE):return None
+        if (gaze is None or gaze.source=='mouse' or
+                not 0<=now-gaze.captured<GAZE_TTL):return None
         if scene is None or not 0<=now-scene.captured<.8:return None
         candidates=[]
         for e in scene.current_elements(now,.8):
@@ -212,7 +211,7 @@ class IntentPredictor:
     def _stable_gaze(self,now):
         if len(self.gaze_trail)<3:return None
         first,last=self.gaze_trail[0],self.gaze_trail[-1]
-        if not 0<=now-last['at']<self.GAZE_MAX_AGE or last['at']-first['at']<self.GAZE_DWELL:return None
+        if not 0<=now-last['at']<GAZE_TTL or last['at']-first['at']<self.GAZE_DWELL:return None
         return last
 
     def _gaze_features(self,e,gaze,scene,role):
@@ -266,8 +265,8 @@ class IntentPredictor:
         unit=delta/travel;speed=min(6000.,travel/dt)
         point=np.array([last.x,last.y]);end=point+unit*speed*.24
         bounds=scene.bounds;scale=max(80.,math.hypot(bounds.w,bounds.h)*.045)
-        valid_gaze=(gaze is not None and gaze.valid and gaze_supported and gaze.source!='mouse'
-                    and 0<=now-gaze.captured<.2)
+        valid_gaze=(gaze is not None and gaze_supported and gaze.source!='mouse'
+                    and 0<=now-gaze.captured<GAZE_TTL)
         turn=0.
         if len(self.trail)>5:
             mid=self.trail[len(self.trail)//2];tail=point-[mid.x,mid.y];norm=np.linalg.norm(tail)

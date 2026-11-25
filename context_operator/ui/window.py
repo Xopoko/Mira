@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QFrame, QLabel, QPushButton
     QVBoxLayout, QHBoxLayout, QGridLayout, QStackedWidget, QLineEdit,
     QPlainTextEdit, QSlider, QComboBox, QScrollArea, QSizePolicy,
     QFormLayout, QStatusBar)
+from ..core.contracts import GAZE_TTL, SCENE_TTL
 from ..core.webcam import fresh as fresh_gaze
 from ..foundations.speech.runtime import microphone_matches
 from ..providers.models import Speech
@@ -156,7 +157,7 @@ class SceneCanvas(QWidget):
         if self.blocked or not c.running:
             self.paint_idle(p);return
         quiet=c.settings.get('quiet_mode',False)
-        elements=scene.current_elements(now) if scene and not quiet and 0<=now-scene.captured<3 else ()
+        elements=scene.current_elements(now) if scene and not quiet and 0<=now-scene.captured<SCENE_TTL else ()
         if not elements:
             self.paint_message(p,'Quiet mode is on. Gaze cues are hidden.' if quiet else 'Mira is waiting for the screen map.')
             return
@@ -166,7 +167,7 @@ class SceneCanvas(QWidget):
         rects=[QRectF(ox+(e.rect.x-bounds.x)*scale,oy+(e.rect.y-bounds.y)*scale,
                      max(3,e.rect.w*scale),max(3,e.rect.h*scale)) for e in elements]
         self.overview.paint(p,rects,self.width(),self.height())
-        gaze=c.attention if c.attention and c.attention.valid and 0<=now-c.attention.captured<.25 else None
+        gaze=c.attention if c.attention and 0<=now-c.attention.captured<GAZE_TTL else None
         prediction=c.prediction if c.prediction and c.prediction.is_fresh(now) else None
         magnetic=c.settings.get('highlight_mode')=='magnetic'
         selected_until=c.fusion.selection_until(c.focus.target,now,gaze)

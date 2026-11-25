@@ -2,7 +2,7 @@ from pathlib import Path
 import time
 import numpy as np
 from ..settings import LOCAL
-from ..core.contracts import Gaze, GazeMeasurement
+from ..core.contracts import Gaze, GazeMeasurement, GAZE_TTL
 from ..foundations.gaze.smoothing import Smoother
 from ..foundations.gaze.arkit import ARKitWorker
 from .phone_connection import PhoneConnection
@@ -33,12 +33,12 @@ class PhoneGaze:
         if not self.worker:return None,'Off',0
         sample=self.worker.latest()
         now=time.monotonic()
-        missing_stamp=sample.captured if 0<=now-sample.captured<.2 else now
+        missing_stamp=sample.captured if 0<=now-sample.captured<GAZE_TTL else now
         if sample.error:self.invalid_captured=missing_stamp;return None,sample.error,0
-        if sample.features is None or sample.blink or not 0<=now-sample.captured<.20:
+        if sample.features is None or sample.blink or not 0<=now-sample.captured<GAZE_TTL:
             self.invalid_captured=missing_stamp
             self.smoother.reset()
-            reason='iPhone data is out of date' if sample.features is not None and not 0<=now-sample.captured<.20 else sample.reason or 'Waiting for iPhone'
+            reason='iPhone data is out of date' if sample.features is not None and not 0<=now-sample.captured<GAZE_TTL else sample.reason or 'Waiting for iPhone'
             return None,reason,sample.fps
         features=sample.features
         try:

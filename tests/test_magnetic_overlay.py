@@ -102,7 +102,6 @@ class MagneticOverlayTests(unittest.TestCase):
         self.assertEqual(current_focus_target(self.scene,self.a,gaze,10.1),self.a)
         self.assertIsNone(current_focus_target(self.scene,self.a,gaze,10.3))
         self.assertIsNone(current_focus_target(self.scene,replace(self.a,pid=3),gaze,10.1))
-        self.assertIsNone(current_focus_target(self.scene,self.a,replace(gaze,valid=False),10.1))
         self.assertEqual(current_focus_target(self.scene,self.a,None,10.1,10.2),self.a)
         self.assertIsNone(current_focus_target(self.scene,self.a,gaze,10.2,10.2))
         self.assertIsNone(current_focus_target(self.scene,replace(self.a,visual_hash='old'),None,10.1,10.2))

@@ -12,7 +12,8 @@ from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QMainWindow, QP
 from ..foundations.gaze.arkit import ARKitWorker
 from ..personalization import StarterSession, ProfileStore
 from ..personalization.history import preserve_attempt
-from ..personalization.session import MIN_DURATION, MIN_FRAMES
+from ..core.contracts import GAZE_TTL
+from ..personalization.session import MIN_DURATION, MIN_FRAMES, SETTLE_SECONDS
 from ..providers.phone_connection import PhoneConnection
 from ..settings import ASSETS, LOCAL
 from .theme import (CARD, DANGER, MUTED, RAIL, RING, SUCCESS, TEXT, WAITING, keyboard_focus, label,
@@ -210,7 +211,7 @@ class SetupWindow(QMainWindow):
         try:
             x = np.asarray(s.features, dtype=float)
             origins = np.asarray(s.eye_origins, dtype=float)
-            return bool(not s.error and not s.blink and 0 <= time.monotonic()-s.captured < .20
+            return bool(not s.error and not s.blink and 0 <= time.monotonic()-s.captured < GAZE_TTL
                         and x.shape == (22,) and origins.shape == (2, 3)
                         and np.isfinite(x).all() and np.isfinite(origins).all())
         except (AttributeError, TypeError, ValueError):
@@ -246,7 +247,7 @@ class SetupWindow(QMainWindow):
                 self.session.begin_check(self.candidate, time.monotonic())
                 self.running = True
         elif self.session.phase in ('train', 'check') and self._ready():
-            self.session.settle_until = time.monotonic() + .85
+            self.session.settle_until = time.monotonic() + SETTLE_SECONDS
             self.running = True
         self.refresh()
 

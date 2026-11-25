@@ -4,6 +4,7 @@ import time
 from PySide6.QtCore import Qt,QTimer,QRectF,QPointF
 from PySide6.QtGui import QPainter,QColor,QPen,QBrush,QRadialGradient,QPainterPath,QRegion
 from PySide6.QtWidgets import QWidget
+from ..core.contracts import GAZE_TTL,MAP_TTL,SCENE_TTL
 from .light_cache import LIGHT_CACHE,tile_bounds
 
 class FadeStrengths:
@@ -22,7 +23,7 @@ def current_focus_target(scene,target,attention,now,selected_until=0.):
     if scene is None:return None
     if selected_until:
         if now>=selected_until:return None
-    elif attention is None or not attention.valid or not 0<=now-attention.captured<.25:
+    elif attention is None or not 0<=now-attention.captured<GAZE_TTL:
         return None
     return scene.current_target(target,now)
 
@@ -42,7 +43,7 @@ def paint_magnetic_focus(painter,scene,target,now,origin=(0,0),scale=1.,strength
     groups=[(w.elements,w.visible,w.captured) for w in scene.windows] if scene.windows else [(scene.elements,(),scene.captured)]
     def project(r):return QRectF((r.x-origin[0])*scale,(r.y-origin[1])*scale,r.w*scale,r.h*scale)
     for elements,visible,stamp in groups:
-        if not 0<=now-stamp<(1.25 if scene.windows else 3):continue
+        if not 0<=now-stamp<(MAP_TTL if scene.windows else SCENE_TTL):continue
         if not any(e.identity==identity for e in elements):continue
         painter.save();painter.setRenderHint(QPainter.Antialiasing)
         if visible:
@@ -96,7 +97,7 @@ def paint_scene_light(painter,scene,center,radius,now,selected=None,energy=0.,or
         right,bottom=tile.right()/scale+origin[0]+15,tile.bottom()/scale+origin[1]+15
     groups=[(w.elements,w.visible,w.captured) for w in scene.windows] if scene.windows else [(scene.elements,(),scene.captured)]
     for elements,visible,stamp in groups:
-        if not 0<=now-stamp<(1.25 if scene.windows else 3):continue
+        if not 0<=now-stamp<(MAP_TTL if scene.windows else SCENE_TTL):continue
         painter.save()
         if visible:
             clip=QPainterPath()
@@ -105,7 +106,7 @@ def paint_scene_light(painter,scene,center,radius,now,selected=None,energy=0.,or
         if forecast is not None and any(e.identity==forecast.identity for e in elements):
             paint_prediction(painter,project(forecast.rect),prediction.strength)
         if point:
-            nearby=[(e.id,project(e.rect)) for e in elements if e.enabled and 0<=now-(e.captured or stamp)<(1.25 if scene.windows else 3)
+            nearby=[(e.id,project(e.rect)) for e in elements if e.enabled and 0<=now-(e.captured or stamp)<(MAP_TTL if scene.windows else SCENE_TTL)
                     and e.rect.x+e.rect.w>=left and e.rect.x<=right and e.rect.y+e.rect.h>=top and e.rect.y<=bottom]
             paint_light(painter,nearby,point,radius*scale,selected,energy,strengths,cache)
         painter.restore()
@@ -147,10 +148,10 @@ class FocusOverlay(QWidget):
 
     def sync(self,focus,attention,scene,enabled=True,show_gaze=True,prediction=None,highlight_mode='radial',*,selected_until=0.):
         now=time.monotonic()
-        self.attention=attention if enabled and attention and attention.valid and 0<=now-attention.captured<.25 else None
+        self.attention=attention if enabled and attention and 0<=now-attention.captured<GAZE_TTL else None
         self.show_point=show_gaze and self.attention is not None and self.attention.source!='mouse'
         self.selected_until=selected_until if enabled else 0.
-        next_scene=scene if enabled and scene and 0<=now-scene.captured<3 else None
+        next_scene=scene if enabled and scene and 0<=now-scene.captured<SCENE_TTL else None
         target=current_focus_target(next_scene,focus.target,self.attention,now,self.selected_until)
         if (highlight_mode!=self.highlight_mode or
                 (target.identity if target else None)!=(self.focus_target.identity if self.focus_target else None)):
@@ -182,7 +183,7 @@ class FocusOverlay(QWidget):
             self.magnetic_dirty=False
             if not dirty.isEmpty():self.update(dirty)
             return
-        if attention is None or not 0<=now-attention.captured<.25:
+        if attention is None or not 0<=now-attention.captured<GAZE_TTL:
             self.center=None
         else:
             point=QPointF(attention.x,attention.y)
@@ -220,7 +221,7 @@ class FocusOverlay(QWidget):
         forecast=self.prediction if prediction_fresh(self.prediction,now) else None
         explicit=target if self.selected_until else None
         attention=self.attention
-        center=self.center if attention is not None and 0<=now-attention.captured<.25 else None
+        center=self.center if attention is not None and 0<=now-attention.captured<GAZE_TTL else None
         if center is None and forecast is None and explicit is None:return
         painter.setRenderHint(QPainter.Antialiasing)
         bounds=self.win.rect(int(self.winId()));dpr=self.devicePixelRatioF()

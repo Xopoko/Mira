@@ -5,7 +5,7 @@ import json
 import re
 import time
 import numpy as np
-from ..core.contracts import Intent
+from ..core.contracts import Intent, GAZE_TTL, SCENE_TTL
 from ..core.grounding import normalize,target_query,label_text,ground
 
 MODEL=Path(__file__).resolve().parents[1]/'assets/intent-model.npz'
@@ -47,9 +47,9 @@ class FastIntent:
         logits=self.weights[:,indices]@values+self.bias
         exp=np.exp(logits-logits.max());p=exp/exp.sum();order=np.argsort(p)
         return self.classes[order[-1]],float(p[order[-1]]),float(p[order[-1]]-p[order[-2]])
-    def interpret(self,text,scene,focus,gaze,now=None,max_gaze_age=.25,allow_selected=False):
+    def interpret(self,text,scene,focus,gaze,now=None,max_gaze_age=GAZE_TTL,allow_selected=False):
         now=time.monotonic() if now is None else now
-        if scene is None or not 0<=now-scene.captured<3:return None
+        if scene is None or not 0<=now-scene.captured<SCENE_TTL:return None
         t=normalize(text)
         # Multi-step, quoted, negated or narrated language needs whole-sentence interpretation.
         if (len(t.split()) > 12 or CONTEXT_ONLY.search(t)
@@ -68,7 +68,7 @@ class FastIntent:
         if query and target is None:return None
         if ambiguous:return Intent('clarify',reply='Several elements match. Look at the one you want and say “click”.')
         if target is None:
-            if not allow_selected and not (gaze and gaze.valid and 0<=now-gaze.captured<max_gaze_age):
+            if not allow_selected and not (gaze and 0<=now-gaze.captured<max_gaze_age):
                 return Intent('clarify',reply='Look at the element again or say its name.')
             target=focus.target
             if target is None:return Intent('clarify',reply='Look at an element or say its name.')

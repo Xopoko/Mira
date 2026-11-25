@@ -15,9 +15,8 @@ from context_operator.providers.game_gaze import (
 class GameGazePacketTests(unittest.TestCase):
     bounds = Rect(-1920, 0, 3840, 1080)
 
-    def gaze_pair(self, *, captured=10.0, x=-1919.0, y=100.0, source="iphone",
-                  valid=True, supported=True):
-        return (Gaze(x, y, captured, 42.0, source, valid),
+    def gaze_pair(self, *, captured=10.0, x=-1919.0, y=100.0, source="iphone", supported=True):
+        return (Gaze(x, y, captured, 42.0, source),
                 GazeMeasurement(captured, (0.0,) * 22, (x, y), supported))
 
     def test_packet_is_fixed_little_endian_contract_and_preserves_capture_time(self):

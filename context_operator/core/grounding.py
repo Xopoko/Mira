@@ -2,6 +2,7 @@
 import math
 import re
 from difflib import SequenceMatcher
+from .contracts import GAZE_TTL
 
 # Preferred spellings and stop words for English and Russian transcripts.
 ALIASES = (
@@ -40,9 +41,9 @@ def similarity(query,label):
     coverage=len(q&l)/len(q)
     return max(coverage,SequenceMatcher(None,query,label).ratio()*.9)
 
-def ground(query,scene,gaze,now,max_gaze_age=.25):
+def ground(query,scene,gaze,now,max_gaze_age=GAZE_TTL):
     """Return (target, ambiguous); a missing match can go to the contextual model."""
-    valid=gaze is not None and gaze.valid and 0<=now-gaze.captured<max_gaze_age
+    valid=gaze is not None and 0<=now-gaze.captured<max_gaze_age
     ranked=[]
     for e in scene.current_elements(now):
         if not e.enabled:continue

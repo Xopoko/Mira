@@ -2,7 +2,7 @@
 import copy,json,math,os,time
 from pathlib import Path
 import numpy as np
-from ..core.contracts import Gaze
+from ..core.contracts import Gaze, GAZE_TTL
 from ..foundations.gaze.smoothing import Smoother
 from .personal_model import PersonalTrainer,adaptive_prediction,_soft_prediction,feature_distance
 
@@ -65,7 +65,7 @@ class GazeLearning:
         os.replace(temp,self.path)
     def correct(self,gaze,measurement=None,now=None,radius=230):
         now=time.monotonic() if now is None else now
-        if measurement is not None and 0<=now-measurement.captured<.2 and self.bounds is not None:
+        if measurement is not None and 0<=now-measurement.captured<GAZE_TTL and self.bounds is not None:
             x=np.asarray(measurement.features);point=np.asarray(measurement.point)
             if x.shape==(22,) and point.shape==(2,) and np.isfinite(np.r_[x,point]).all():
                 corrected,route=adaptive_prediction(x,point,self.field_state(),measurement.supported,self.trainer.model)
