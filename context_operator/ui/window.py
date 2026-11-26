@@ -637,7 +637,7 @@ class Window(QMainWindow):
         box.addWidget(label('A remote API receives your command and the element map. When screen recognition is on, it also receives an image of the window. Use a secure local proxy for API keys.','muted',True))
         b=QPushButton('Save voice and model settings');b.clicked.connect(self.save_connections);box.addWidget(b,0,Qt.AlignLeft)
         advanced.addWidget(frame)
-        layout.addWidget(label('Version 1.3.1','faint'));layout.addStretch()
+        layout.addWidget(label('Version 1.4.0','faint'));layout.addStretch()
 
     def add_check(self,layout,key,text,hint='',commit=None):
         """A switch for one saved setting. Every switch of the same setting stays in step."""

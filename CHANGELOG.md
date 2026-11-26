@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 1.4.0
+
+The iPhone companion is at 0.4.3. Gaze setups made with 1.3.1 need to be run
+again.
 
 - Make gaze setup about twice as accurate. Mira now works out where the screen
   is in space from the setup points and treats head and eye movement

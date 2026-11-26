@@ -97,18 +97,14 @@ how Mira handles stale observations.
 
 ## Install on Windows
 
-Use Windows x64 and 64-bit Python 3.11. This page describes the current
-source: the thirteen-point setup and the Practice layout shown above come with
-a [build from source](#build-from-source). The published release is older and
-has [its own instructions](https://github.com/Xopoko/Mira/blob/v1.3.1/README.md).
-To install it, download the wheel and `requirements.lock.txt`
-from [Releases](https://github.com/Xopoko/Mira/releases), then run these
-commands in PowerShell from the download folder.
+Use Windows x64 and 64-bit Python 3.11. Download the wheel and
+`requirements.lock.txt` from [Releases](https://github.com/Xopoko/Mira/releases),
+then run these commands in PowerShell from the download folder.
 
 ```powershell
 py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.lock.txt
-.\.venv\Scripts\python.exe -m pip install --no-deps .\context_operator-1.3.1-py3-none-any.whl
+.\.venv\Scripts\python.exe -m pip install --no-deps .\context_operator-1.4.0-py3-none-any.whl
 .\.venv\Scripts\pythonw.exe -m context_operator.app
 ```
 
