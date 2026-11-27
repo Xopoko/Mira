@@ -185,7 +185,7 @@ class ControllerWebcamTests(unittest.TestCase):
         c.running = True
         c.settings['click_learning'] = True
         c.learning.key = 'phone-fixture'
-        c.phone = phone = Mock(measurement=None, invalid_captured=None, validation_radius=50.)
+        c.phone = phone = Mock(bounds=c.win.bounds(), measurement=None, invalid_captured=None, validation_radius=50.)
         before_click = (70., 70.06, 70.13, 70.19, 70.25, 70.31)
         c.webcam = FakeWebcam(c.win.bounds(), 'fixture',
             [Gaze(400., 300., stamp, 50., 'webcam') for stamp in (*before_click, 70.4)])
@@ -239,7 +239,7 @@ class ControllerWebcamTests(unittest.TestCase):
     def test_source_change_after_queue_prevents_dispatch(self):
         c = self.controller
         c.running = True
-        c.phone = Mock()
+        c.phone = Mock(bounds=c.win.bounds())
         c.phone.worker.is_alive.return_value = False
         c.phone.poll.return_value = (None, 'iPhone connection closed', 0)
         c.gaze_source_mode = 'iphone'

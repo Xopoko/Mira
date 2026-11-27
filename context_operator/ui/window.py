@@ -15,7 +15,7 @@ from ..foundations.speech.runtime import microphone_matches
 from ..providers.models import Speech
 from ..providers.phone_connection import PhoneConnection, WIFI_PHONE_NEXT_STEP, WifiPhoneNotFound, find_phones
 from ..settings import ASSETS, LOCAL, save
-from .overlay import paint_scene_light,paint_magnetic_focus,current_focus_target
+from .overlay import FocusOverlay,paint_scene_light,paint_magnetic_focus,current_focus_target
 from .light_cache import LightCache
 from .overview_cache import OverviewCache
 from .theme import (ACCENT, CARD, FAINT, GAZE_DOT, GAZE_FOCUS, GAZE_LIGHT, GROUND, LINE, MUTED, OUTLINE,
@@ -190,7 +190,7 @@ class Window(QMainWindow):
     microphone_list_finished = Signal(object)
 
     def __init__(self,controller):
-        super().__init__();self.c=controller;self.settings=controller.settings;self.overlays=[];self.setup_window=None
+        super().__init__();self.c=controller;self.settings=controller.settings;self.overlays={};self.setup_window=None
         self.setWindowTitle('Mira');self.resize(1180,780);self.setMinimumSize(940,720)
         self.setWindowIcon(QIcon(str(ASSETS/'icon.png')));self.setStyleSheet(theme())
         self.last_paint=0.;self.counter=0;self.practice_active=False;self._profile_stamp=None;self._profile_status={}
@@ -1125,11 +1125,22 @@ class Window(QMainWindow):
         self.voice_lamp.set_state(c.voice_state, voice_word)
         return phone_state
 
+    def add_overlay(self,screen):
+        if not self.c.closed and screen not in self.overlays:
+            self.overlays[screen]=FocusOverlay(screen,self.c.win)
+
+    def remove_overlay(self,screen):
+        overlay=self.overlays.pop(screen,None)
+        if overlay is not None:
+            overlay.timer.stop()
+            overlay.close()
+            overlay.deleteLater()
+
     def refresh(self):
         now=time.monotonic();c=self.c
         quiet=bool(self.settings.get('quiet_mode',False))
         selected_until=c.fusion.selection_until(c.focus.target,now,c.attention)
-        for overlay in self.overlays:
+        for overlay in self.overlays.values():
             overlay.sync(c.focus,c.attention,c.scene,c.running and not quiet,self.settings['show_gaze'],
                          prediction=c.prediction,highlight_mode=self.settings.get('highlight_mode','radial'),
                          selected_until=selected_until)
@@ -1224,5 +1235,5 @@ class Window(QMainWindow):
             try:self.setup_window.close()
             except RuntimeError:pass
         self.refresh_timer.stop();self.c.close()
-        for overlay in self.overlays:overlay.close()
+        for screen in tuple(self.overlays):self.remove_overlay(screen)
         event.accept()

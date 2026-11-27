@@ -11,6 +11,7 @@ import time
 import unittest
 from unittest.mock import Mock, patch
 import numpy as np
+from context_operator.core.contracts import Rect
 from context_operator.providers.phone_connection import (PhoneConnection, WIFI_PORT, WIFI_PHONE_NEXT_STEP,
                                                          WifiPhoneNotFound, find_phones)
 from context_operator.providers.gaze import PhoneGaze
@@ -100,6 +101,18 @@ class PhoneTransportTests(unittest.TestCase):
             discover.assert_called_once_with(stop_event=None)
             connect.assert_called_once_with(('192.168.2.42',WIFI_PORT),timeout=2)
         self.assertEqual(connection.found_host,'192.168.2.42')
+
+    def test_connect_tries_next_discovered_phone_if_the_first_one_disconnects(self):
+        connection = PhoneConnection('wifi')
+        first, second = '192.168.2.42', '192.168.2.43'
+        stream = Mock()
+        with patch('context_operator.providers.phone_connection.find_phones', return_value=[first, second]), \
+             patch('context_operator.providers.phone_connection.socket.create_connection',
+                   side_effect=[ConnectionRefusedError(), stream]) as connect:
+            self.assertIs(connection.open(), stream)
+        self.assertEqual([attempt.args[0] for attempt in connect.call_args_list],
+                         [(first, WIFI_PORT), (second, WIFI_PORT)])
+        self.assertEqual(connection.found_host, second)
 
     def run_fixture(self,serve):
         listener=socket.socket();listener.bind(('127.0.0.1',0));listener.listen(1)
@@ -266,6 +279,7 @@ class ConnectionSettingsTests(unittest.TestCase):
         phone.poll.return_value=(None,'Waiting for iPhone',0)
         c.phone=phone;c.running=True;c.win=Mock()
         c.win.emergency.return_value=False;c.win.shift_down.return_value=False
+        c.win.bounds.return_value=phone.bounds=Rect(0,0,1920,1080)
         try:
             with patch.object(c,'pause') as pause, patch('context_operator.settings.save') as save:
                 c.tick();c.tick()

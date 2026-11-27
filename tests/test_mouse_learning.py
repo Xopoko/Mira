@@ -72,12 +72,14 @@ class MouseControllerTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory();self.c=Controller(dict(DEFAULTS,vision=False,ranker=False,anticipation=False));self.c.timer.stop()
         self.c.running=True;self.c.win=Mock();self.c.win.emergency.return_value=False
         self.c.win.shift_down.return_value=False
-        self.bounds=Rect(0,0,1000,700);self.c.win.rect.return_value=self.bounds;self.c.win.at.return_value=1
+        self.bounds=Rect(0,0,1000,700);self.c.win.bounds.return_value=self.bounds
+        self.c.win.rect.return_value=self.bounds;self.c.win.at.return_value=1
         self.a=Element('a','A','Button',Rect(100,100,60,40),1,pid=7)
         self.b=Element('b','B','Button',Rect(800,100,60,40),1,pid=7)
         self.c.scene=Scene(1,100,self.bounds,(self.a,self.b),1,window_rect=self.bounds);self.c.focus=Focus(self.a)
         self.c.learning=GazeLearning(Path(self.temp.name)/'learn.json');self.c.learning.bind('profile',self.bounds,np.full(22,.05))
-        self.c.phone=Mock();self.c.phone.measurement=None;self.c.phone.poll.return_value=(Gaze(130,120,100,80),'ready',60)
+        self.c.phone=Mock(bounds=self.bounds,measurement=None)
+        self.c.phone.poll.return_value=(Gaze(130,120,100,80),'ready',60)
         self.c.win.cursor.return_value=(830,120);self.c.output=Mock()
     def tearDown(self):self.c.close();self.temp.cleanup()
     def tick(self,now,pressed=False):

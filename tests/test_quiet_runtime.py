@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QApplication
 
 from context_operator.controller import Controller
 from context_operator.core.click_learning import HumanClick
-from context_operator.core.contracts import Gaze, GazeMeasurement, Rect
+from context_operator.core.contracts import Gaze, GazeMeasurement, Rect, Scene
 from context_operator.providers.game_gaze import (
     FLAG_ACTIVE,
     PACKET,
@@ -95,7 +95,7 @@ class QuietRuntimeTests(unittest.TestCase):
         self.controller.win.bounds.return_value = Rect(0, 0, 1000, 700)
         self.controller.learning = GazeLearning(Path(self.temp.name) / 'learning.json')
         self.controller.learning.bind('quiet-test-profile', Rect(0, 0, 1000, 700), np.ones(22))
-        self.controller.phone = Mock()
+        self.controller.phone = Mock(bounds=self.controller.win.bounds())
         self.controller.phone.invalid_captured = None
         self.controller.scene = None
 
@@ -147,6 +147,25 @@ class QuietRuntimeTests(unittest.TestCase):
         self.assertTrue(self.publisher.closed)
         self.assertIsNone(c.game_gaze_publisher)
         self.assertEqual(len(self.publisher.packets), 2)
+
+    def test_screen_change_disconnects_phone_and_revokes_game_gaze(self):
+        c = self.controller
+        phone = c.phone
+        c.scene = Scene(1, 9.72, c.win.bounds(), ())
+        self.tick_with(9.75, measurement(9.72))
+        self.assertEqual(PACKET.unpack(self.publisher.packets[-1])[2], FLAG_ACTIVE)
+        source_epoch = c.gaze_source_epoch
+
+        c.win.bounds.return_value = Rect(0, 0, 1200, 700)
+        self.tick_with(9.80, measurement(9.77))
+
+        self.assertIsNone(c.phone)
+        self.assertIsNone(c.attention)
+        self.assertIsNone(c.scene)
+        self.assertGreater(c.gaze_source_epoch, source_epoch)
+        phone.poll.assert_called_once()
+        phone.stop.assert_called_once()
+        self.assertEqual(PACKET.unpack(self.publisher.packets[-1])[2], 0)
 
 
 if __name__ == '__main__':

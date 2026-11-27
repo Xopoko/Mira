@@ -15,7 +15,6 @@ def main():
     from .settings import load,LOCAL
     from .controller import Controller
     from .ui.window import Window
-    from .ui.overlay import FocusOverlay
     app=QApplication(sys.argv);app.setApplicationName('Context Operator');app.setApplicationDisplayName('Mira');app.setOrganizationName('ContextOperator')
     for font in ('segoeui.ttf','seguisb.ttf','segoeuib.ttf','SegUIVar.ttf','CascadiaMono.ttf'):
         path=Path(os.environ.get('WINDIR','C:/Windows'))/'Fonts'/font
@@ -30,7 +29,9 @@ def main():
         window.showNormal();window.raise_();window.activateWindow()
     server.newConnection.connect(show_existing)
     window.show()
-    for screen in app.screens():window.overlays.append(FocusOverlay(screen,window.c.win))
+    app.screenAdded.connect(window.add_overlay)
+    app.screenRemoved.connect(window.remove_overlay)
+    for screen in app.screens():window.add_overlay(screen)
     def exception(kind,error,tb):
         LOCAL.mkdir(parents=True,exist_ok=True)
         (LOCAL/'crash.log').write_text(''.join(traceback.format_exception(kind,error,tb)),encoding='utf-8')

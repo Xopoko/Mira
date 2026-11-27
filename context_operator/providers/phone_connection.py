@@ -170,14 +170,15 @@ class PhoneConnection:
                 return socket.create_connection((self.host, WIFI_PORT), timeout=2)
             except OSError:
                 pass
-        hosts = find_phones(stop_event=stop_event)
+        for host in find_phones(stop_event=stop_event):
+            if stop_event is not None and stop_event.is_set():
+                break
+            try:
+                connection = socket.create_connection((host, WIFI_PORT), timeout=2)
+            except OSError:
+                continue
+            object.__setattr__(self, 'found_host', host)
+            return connection
         if stop_event is not None and stop_event.is_set():
             raise ConnectionAbortedError('iPhone connection cancelled')
-        if hosts:
-            try:
-                connection = socket.create_connection((hosts[0], WIFI_PORT), timeout=2)
-            except OSError:
-                raise WifiPhoneNotFound() from None
-            object.__setattr__(self, 'found_host', hosts[0])
-            return connection
         raise WifiPhoneNotFound()

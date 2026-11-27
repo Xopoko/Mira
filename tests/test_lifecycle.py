@@ -375,7 +375,8 @@ class LifecycleTests(unittest.TestCase):
         from dataclasses import replace
         self.c.settings['dwell_enabled']=True;self.c.settings['dwell_ms']=700
         self.c.win=Mock();self.c.win.emergency.return_value=False;self.c.win.shift_down.return_value=False
-        self.c.phone=Mock();self.c.phone.measurement=None
+        self.c.win.bounds.return_value=self.scene.bounds
+        self.c.phone=Mock(bounds=self.scene.bounds,measurement=None)
         self.c.phone.poll.side_effect=lambda radius:(Gaze(35,20,time.monotonic()),'ready',40)
         self.c.output.execute.return_value={'target':'Plus'}
         now=time.monotonic()

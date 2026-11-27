@@ -9,6 +9,12 @@
 - Keep a command in progress when the screen reader reports an error.
 - Check that the target and window map are still current just before sending
   an action to Windows.
+- Stop iPhone tracking and its game gaze feed when the desktop bounds no longer
+  match the current calibration.
+- Keep the Windows overlay aligned when displays are moved, resized, connected,
+  or disconnected.
+- Try the next discovered iPhone if the first no longer accepts a Wi-Fi connection.
+- Keep click corrections undoable after reconnecting the same gaze profile.
 
 ## 1.4.0
 

@@ -129,7 +129,10 @@ class FocusOverlay(QWidget):
         self.setWindowTitle('Focus layer')
         self.setAttribute(Qt.WA_TranslucentBackground);self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.win=win;self.setGeometry(screen.geometry())
+        self.win=win
+        self.setScreen(screen)
+        self.setGeometry(screen.geometry())
+        screen.geometryChanged.connect(self.setGeometry)
         self.attention=None;self.center=None;self.previous=None
         self.prediction=None
         self.highlight_mode='radial';self.focus_target=None;self.selected_until=0.

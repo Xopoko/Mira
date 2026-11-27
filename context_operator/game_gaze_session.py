@@ -10,11 +10,12 @@ from .providers.game_gaze import GameGazePublisher
 class GameGazeSession:
     """Own one phone reader and publisher; dependencies are injectable for tests."""
 
-    def __init__(self, phone, learning, desktop: Rect, *, radius=230,
+    def __init__(self, phone, learning, desktop: Rect, *, desktop_bounds, radius=230,
                  publisher_factory=GameGazePublisher, clock=time.monotonic):
         self.phone = phone
         self.learning = learning
         self.desktop = desktop
+        self.desktop_bounds = desktop_bounds
         self.radius = radius
         self.publisher_factory = publisher_factory
         self.clock = clock
@@ -42,6 +43,8 @@ class GameGazeSession:
             return self.status
         now = self.clock()
         try:
+            if self.desktop_bounds() != self.desktop:
+                return self.stop(reason='The screen changed. Connect gaze again for this screen.')
             raw_gaze, reason, _fps = self.phone.poll(self.radius)
             measurement = self.phone.measurement
             gaze = self.learning.correct(raw_gaze, measurement, now, self.radius)
@@ -91,10 +94,10 @@ class GameGazeSession:
                     first_error = exc
         return first_error
 
-    def stop(self):
+    def stop(self, *, reason='Off · connect gaze to begin'):
         error = self._close_resources()
         if error is None:
-            self.status = 'Off · connect gaze to begin'
+            self.status = reason
         else:
             self.status = f'Couldn’t stop: {type(error).__name__}: {error}'
         return self.status
@@ -109,10 +112,11 @@ def create_saved_session():
     from .settings import LOCAL, load
 
     settings = load()
-    desktop = Windows().bounds()
+    desktop_bounds = Windows().bounds
+    desktop = desktop_bounds()
     phone = PhoneGaze(desktop, connection=PhoneConnection.from_settings(settings))
     learning = GazeLearning(learning_path(phone.profile_key, LOCAL))
     learning.bind(phone.profile_key, desktop, phone.feature_scale)
     learning.trainer.set_seed(phone.profile)
-    return GameGazeSession(phone, learning, desktop,
+    return GameGazeSession(phone, learning, desktop, desktop_bounds=desktop_bounds,
                            radius=settings.get('radius', 230))

@@ -116,7 +116,9 @@ that the position is outside the setup range.
 and keeps the previous pair as a backup. It reads back what it wrote and
 restores the old pair if anything fails. The report records the model's hash
 and the bounds of the virtual desktop, and a profile is not loaded when those
-bounds differ. Rearranging monitors inside the same bounds is not detected.
+bounds differ. If the bounds change while tracking, both the desktop app and
+the standalone gaze runner disconnect the iPhone. Rearranging monitors inside
+the same bounds is not detected.
 The files hold numeric arrays and JSON, never pickle.
 
 ## Corrections, focus and the overlay

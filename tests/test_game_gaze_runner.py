@@ -53,13 +53,14 @@ class FakeLearning:
 class GameGazeSessionTests(unittest.TestCase):
     bounds = Rect(-100, 0, 500, 300)
 
-    def make_session(self, **phone_options):
+    def make_session(self, *, desktop_bounds=None, **phone_options):
         now = [20.0]
         events = []
         phone = FakePhone(events, **phone_options)
         learning = FakeLearning(events)
         publisher = FakePublisher(events)
         session = GameGazeSession(phone, learning, self.bounds, radius=40,
+                                  desktop_bounds=desktop_bounds or (lambda: self.bounds),
                                   publisher_factory=lambda: publisher,
                                   clock=lambda: now[0])
         return session, phone, publisher, events, now
@@ -91,6 +92,20 @@ class GameGazeSessionTests(unittest.TestCase):
         self.assertTrue(session.start())
         self.assertIn('tracking unavailable', session.tick())
         session.stop()
+        self.assertEqual(events[-2:], ['publisher.close', 'phone.stop'])
+
+    def test_screen_change_stops_runner_before_reading_another_frame(self):
+        desktop = self.bounds
+        session, phone, publisher, events, _ = self.make_session(desktop_bounds=lambda: desktop)
+        self.assertTrue(session.start())
+        session.tick()
+        self.assertEqual(phone.polls, 1)
+
+        desktop = Rect(0, 0, 800, 600)
+        self.assertIn('The screen changed', session.tick())
+        self.assertFalse(session.running)
+        self.assertEqual(phone.polls, 1)
+        self.assertEqual(len(publisher.calls), 1)
         self.assertEqual(events[-2:], ['publisher.close', 'phone.stop'])
 
     def test_failed_phone_read_closes_publisher_and_stops_source(self):

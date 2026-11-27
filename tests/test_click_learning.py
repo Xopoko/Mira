@@ -221,7 +221,9 @@ class ClickControllerTests(unittest.TestCase):
         self.c.running=True;self.c.win=Mock();self.c.win.emergency.return_value=False;self.c.win.shift_down.return_value=False
         self.c.learning=GazeLearning(Path(self.temp.name)/'learning.json')
         self.c.learning.bind('profile',Rect(0,0,1000,700),np.ones(22))
-        self.c.phone=Mock(invalid_captured=None,validation_radius=230.);self.c.scene=None;self.c.output=Mock()
+        self.c.win.bounds.return_value=self.c.learning.bounds
+        self.c.phone=Mock(bounds=self.c.learning.bounds,invalid_captured=None,validation_radius=230.)
+        self.c.scene=None;self.c.output=Mock()
     def tearDown(self):self.c.close();self.temp.cleanup()
     def tick(self,now,s):
         self.c.phone.measurement=s;self.c.phone.poll.return_value=(Gaze(25,12,now),'ready',60)
@@ -279,5 +281,23 @@ class ClickControllerTests(unittest.TestCase):
         self.c.learning.learn_click(sample(10),(25,72));self.c.undo_learning()
         self.assertEqual(self.c.learning.count,0);self.assertFalse(self.c.learning.click_anchors)
         self.assertEqual(self.c.click_status,'Last correction undone')
+
+    def test_can_undo_correction_after_reconnecting_the_same_profile(self):
+        self.c.learning.learn_click(sample(10), (25, 72))
+        self.c.win.bounds.return_value = self.c.learning.bounds
+        phone = Mock(profile_key=self.c.learning.key, feature_scale=np.ones(22))
+        phone.profile.arrays = {'training_x': np.empty((0, 22)), 'training_y': np.empty((0, 2))}
+
+        self.c.toggle_phone()
+        self.assertIsNone(self.c.phone)
+        with patch('context_operator.controller.PhoneGaze', return_value=phone), \
+             patch('context_operator.controller.phone_learning_path', return_value=self.c.learning.path):
+            self.c.toggle_phone()
+
+        self.assertIs(self.c.phone, phone)
+        self.c.undo_learning()
+        self.assertEqual(self.c.learning.count, 0)
+        self.assertFalse(self.c.learning.click_anchors)
+        self.assertEqual(json.loads(self.c.learning.path.read_text(encoding='utf-8'))['count'], 0)
 
 if __name__=='__main__':unittest.main()

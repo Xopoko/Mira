@@ -236,13 +236,17 @@ class Controller(QObject):
             new_phone=None
             try:
                 if phone:phone.stop()
-                new_phone=PhoneGaze(self.win.bounds(),connection=PhoneConnection.from_settings(self.settings))
+                bounds=self.win.bounds()
+                new_phone=PhoneGaze(bounds,connection=PhoneConnection.from_settings(self.settings))
                 self.phone=new_phone
                 path=phone_learning_path(new_phone.profile_key,LOCAL)
                 if self.learning.path!=path:self.learning=GazeLearning(path)
                 new_phone.start();self.pointer_mode=False
-                self.learning.bind(new_phone.profile_key,self.win.bounds(),new_phone.feature_scale)
-                self.learning.trainer.set_seed(new_phone.profile)
+                if self.learning.key!=new_phone.profile_key or self.learning.bounds!=bounds:
+                    self.learning.bind(new_phone.profile_key,bounds,new_phone.feature_scale)
+                    self.learning.trainer.set_seed(new_phone.profile)
+                else:
+                    self.learning.smoother.reset()
                 if not self.running:self.start()
                 self.gaze_status='Connecting to iPhone'
             except Exception as exc:
@@ -601,7 +605,18 @@ class Controller(QObject):
         if not self.running:
             self._publish_game_gaze(now,running=False)
             return
+        desktop=self.win.bounds()
         phone=self.phone
+        if phone and phone.bounds!=desktop:
+            self._revoke_gaze_target()
+            self.scene=None;self.vision_elements=();self.vision_sources={}
+            self.phone=None
+            self._reported_wifi_connection=None
+            self.gaze_fps=0.
+            if not self.settings['anticipation']:self.clicks.stop()
+            phone.stop()
+            phone=None
+            self.message.emit('iPhone','The screen changed. Reconnect iPhone or run gaze setup for this screen.')
         if phone:
             self._remember_discovered_phone(phone)
             self.gaze,self.gaze_status,self.gaze_fps=phone.poll(self.settings['radius'])
@@ -621,7 +636,7 @@ class Controller(QObject):
         if mouse_control!=self.mouse_control:
             self.fusion.reset();self.dwell_id=None
         self.mouse_control=mouse_control
-        self._publish_game_gaze(now,desktop=self.win.bounds(),running=True)
+        self._publish_game_gaze(now,desktop=desktop,running=True)
         self.attention=Gaze(*self.win.cursor(),now,self.settings['radius'],'mouse') if mouse_control else self.gaze
         self.fusion.stability=self.settings['stability_ms']/1000
         self.focus=(self.fusion.choose_pointer(self.scene,self.attention,now,self.win.at(self.attention.x,self.attention.y))

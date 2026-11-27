@@ -13,7 +13,6 @@ from PySide6.QtTest import QTest
 from context_operator.settings import DEFAULTS,LOCAL,load
 from context_operator.controller import Controller
 from context_operator.ui.window import Window
-from context_operator.ui.overlay import FocusOverlay
 from context_operator.core.contracts import Element,Rect,Scene,Gaze,Focus
 
 
@@ -41,8 +40,9 @@ with tempfile.TemporaryDirectory() as folder, \
     c.timer.stop();window=Window(c);window.refresh_timer.stop();window.show()
     bounds=Rect(0,0,800,600)
     win=Mock();win.rect.return_value=bounds;win.u.GetWindowLongW.return_value=0
-    overlay=FocusOverlay(app.primaryScreen(),win);overlay.timer.stop();overlay.resize(800,600)
-    window.overlays.append(overlay)
+    screen=app.primaryScreen()
+    with patch.object(c,'win',win):window.add_overlay(screen)
+    overlay=window.overlays[screen];overlay.timer.stop();overlay.resize(800,600)
     target=Element('target','Sample element','Button',Rect(150,150,120,60),1,pid=2,captured=10.)
     forecast=Element('next','Next element','Button',Rect(380,150,120,60),1,pid=2,captured=10.)
     scene=Scene(1,10.,bounds,(target,forecast),1)

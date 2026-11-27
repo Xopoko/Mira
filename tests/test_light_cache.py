@@ -3,7 +3,7 @@ os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 import unittest
 from unittest.mock import Mock,patch
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QPoint,QPointF,QRectF
+from PySide6.QtCore import QPoint,QPointF,QRect,QRectF
 from PySide6.QtGui import QImage,QPainter,QPaintEvent
 from context_operator.ui.light_cache import LightCache
 from context_operator.ui.overlay import paint_scene_light,FocusOverlay
@@ -68,6 +68,19 @@ class CacheTests(unittest.TestCase):
         replacement=Element('a','Changed','Edit',element.rect,1,pid=5,captured=10)
         changed=Scene(2,10,bounds,(replacement,),1,window_rect=bounds)
         self.assertEqual(frame(10.4,changed).pixelColor(130,98).alpha(),0)
+
+    def test_overlay_follows_screen_geometry_changes(self):
+        screen = APP.primaryScreen()
+        win = Mock()
+        win.u.GetWindowLongW.return_value = 0
+        overlay = FocusOverlay(screen, win)
+        self.addCleanup(overlay.close)
+        overlay.timer.stop()
+        self.assertEqual(overlay.geometry(), screen.geometry())
+
+        moved = QRect(-500, 90, 500, 400)
+        screen.geometryChanged.emit(moved)
+        self.assertEqual(overlay.geometry(), moved)
 
     def test_overlay_damage_erases_moved_light_and_expired_idle_prediction(self):
         bounds=Rect(-1200,0,1200,800)
