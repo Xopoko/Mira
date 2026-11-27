@@ -159,6 +159,24 @@ class PhoneTransportTests(unittest.TestCase):
         worker=self.run_fixture(serve)
         self.assertEqual(worker.frames,0);self.assertTrue(worker.latest().error)
 
+    def test_frozen_frame_closes_connection_after_five_seconds_without_a_new_frame(self):
+        clock = Mock(wraps=time)
+        clock.monotonic.side_effect = [100., 104., 108., 109.1]
+
+        def serve(sock, _worker):
+            frame = json.dumps(packet()).encode() + b'\n'
+            with sock.makefile('rb') as incoming:
+                for _ in range(3):
+                    self.assertEqual(incoming.readline(), b'GET\n')
+                    sock.sendall(frame)
+                self.assertEqual(incoming.readline(), b'')
+
+        with patch('context_operator.foundations.gaze.arkit.time', clock):
+            worker = self.run_fixture(serve)
+        self.assertEqual(worker.frames, 1)
+        self.assertIsNone(worker.latest().features)
+        self.assertIn('No new TrueDepth data', worker.latest().error)
+
     def test_duplicates_stale_frames_and_changed_session_cannot_refresh(self):
         decoder=PacketDecoder();decoder.decode(packet())
         self.assertIsNone(decoder.decode(packet()))

@@ -1,12 +1,12 @@
 import unittest
 import time
-from unittest.mock import Mock,patch
+from unittest.mock import ANY,Mock,patch
 from contextlib import nullcontext
 from dataclasses import replace
 from types import SimpleNamespace
 from context_operator.providers.windows import WindowsOutput
 from context_operator.providers.uia_reader import WindowReader
-from context_operator.core.contracts import Rect,Element,Scene,Intent,WindowMap
+from context_operator.core.contracts import MAP_TTL,Rect,Element,Scene,Intent,WindowMap
 
 class OutputTests(unittest.TestCase):
     def test_ascii_punctuation_is_not_sent_as_unrelated_virtual_keys(self):
@@ -20,6 +20,7 @@ class OutputTests(unittest.TestCase):
     def test_supported_chord_preserves_down_and_reverse_up_order(self):
         output=WindowsOutput();win=output.win;output.win=Mock(wraps=win)
         output.win.u=Mock();output.win.shift_down.return_value=False;output.win.activate=Mock()
+        output.win.foreground=Mock(return_value=12)
         output.win.send=Mock();scene=Scene(1,time.monotonic(),Rect(0,0,800,600),(),12)
         output.execute(Intent('press_keys',keys=('Ctrl','A')),None,scene)
         events=output.win.send.call_args.args[0]
@@ -52,7 +53,7 @@ class OutputTests(unittest.TestCase):
         output=WindowsOutput();win=output.win
         # Keep Windows' INPUT constructors real; replace every effectful call.
         win.u=Mock();win.u.IsWindow.return_value=True;win.pid=Mock(return_value=7)
-        win.at=Mock(return_value=12);win.shift_down=Mock(return_value=False)
+        win.at=Mock(return_value=12);win.foreground=Mock(return_value=12);win.shift_down=Mock(return_value=False)
         win.activate=Mock();win.send=Mock();win.bounds=Mock(return_value=Rect(0,0,1920,1080))
         output.validate_visual=Mock();output.validate_control=Mock()
         output.semantic=Mock(return_value=False)
@@ -63,7 +64,7 @@ class OutputTests(unittest.TestCase):
         output,target,scene=self.pointer_click_fixture()
         intent=Intent('click',target_id=target.id)
         result=output.execute(intent,target,scene)
-        output.semantic.assert_called_once_with(intent,target)
+        output.semantic.assert_called_once_with(intent,target,ANY)
         output.validate_visual.assert_called_once_with(target)
         output.validate_control.assert_called_once_with(target)
         output.win.send.assert_called_once()
@@ -99,6 +100,38 @@ class OutputTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'The screen changed'):
             output.execute(Intent('click',target_id=target.id),target,scene)
         output.win.send.assert_not_called();output.semantic.assert_not_called()
+    def test_a_window_map_that_expires_during_validation_prevents_dispatch(self):
+        stamp = 10.
+        bounds = Rect(0, 0, 800, 600)
+        for route in ('native', 'uia'):
+            with self.subTest(route=route), patch('context_operator.providers.windows.time.monotonic', return_value=stamp) as clock:
+                def expire(*args, **kwargs):
+                    clock.return_value = stamp + MAP_TTL
+
+                if route == 'native':
+                    output, target, _ = self.pointer_click_fixture()
+                    output.validate_control.side_effect = expire
+                    intent = Intent('click', target_id=target.id)
+                    api = None
+                else:
+                    output, pattern, api, target = self.semantic_fixture()
+                    lookup = api.EditControl
+                    def delayed_lookup(**kwargs):
+                        expire()
+                        return lookup(**kwargs)
+                    api.EditControl = delayed_lookup
+                    intent = Intent('type_text', text='Hello', target_id=target.id)
+
+                win = output.win
+                win.pid = Mock(return_value=target.pid)
+                win.rect = Mock(return_value=bounds)
+                window = WindowMap(target.window, target.pid, bounds, stamp, (target,))
+                scene = Scene(1, stamp, bounds, (target,), target.window, windows=(window,))
+                with (patch.dict('sys.modules', uiautomation=api) if api else nullcontext()), self.assertRaisesRegex(RuntimeError, 'Updating the window map'):
+                    output.execute(intent, target, scene)
+                win.send.assert_not_called()
+                if api:
+                    pattern.SetValue.assert_not_called()
     def test_pointer_click_cancelled_before_send(self):
         output,target,scene=self.pointer_click_fixture();output.set_guard(lambda:False)
         with self.assertRaisesRegex(RuntimeError,'Control stopped'):
@@ -111,7 +144,7 @@ class OutputTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'rejected the input'):
             output.execute(intent,target,scene)
         output.win.send.assert_called_once()
-        output.semantic.assert_called_once_with(intent,target)
+        output.semantic.assert_called_once_with(intent,target,ANY)
     def test_semantic_identity_handles_unnamed_and_long_labels(self):
         for name in ('','Long label '*25):
             with self.subTest(name_length=len(name)):
@@ -158,7 +191,6 @@ class OutputTests(unittest.TestCase):
         target = replace(button, id='edit', label='Name', role='Edit')
         scene = replace(scene, elements=(target,))
         win = output.win
-        win.foreground = Mock(return_value=12)
         calls = Mock()
         calls.attach_mock(win.send, 'send')
         calls.attach_mock(output.validate_control, 'validate')

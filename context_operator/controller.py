@@ -29,7 +29,7 @@ class Controller(QObject):
     received_vision=Signal(object,int)
     received_speech=Signal(object,int)
     received_decision=Signal(object,object,int,float,int)
-    failed=Signal(str,int)
+    failed=Signal(str,int,bool)
     received_output=Signal(object,object,str,int)
 
     def __init__(self,settings,*,output=None,screen_factory=ScreenProvider,model_factory=ContextModel,click_source=None,game_gaze_factory=None,webcam_factory=None):
@@ -76,9 +76,10 @@ class Controller(QObject):
         self.received_output.connect(self._output)
         self.timer=QTimer(self);self.timer.timeout.connect(self.tick);self.timer.start(25)
 
-    def _failure(self,error,generation):
+    def _failure(self,error,generation,command_failed):
         if generation!=self.generation:return
-        self.busy=self.output_pending;self.status=error;self.message.emit('Notice',error);self.changed.emit()
+        if command_failed:self.busy=self.output_pending
+        self.status=error;self.message.emit('Notice',error);self.changed.emit()
 
     def start(self):
         if self.running:return
@@ -89,9 +90,9 @@ class Controller(QObject):
         self.scene_stop=threading.Event();stop=self.scene_stop
         self.status='Recognizing screen elements'
         def scan():
-            import uiautomation as auto
             provider=None
             try:
+                import uiautomation as auto
                 with auto.UIAutomationInitializerInThread():
                     provider=self.screen_factory();self.scene_provider=provider
                     while not stop.is_set():
@@ -102,7 +103,7 @@ class Controller(QObject):
                         if not stop.is_set():self.received_scene.emit(scene,generation,epoch)
                         stop.wait(.06)
             except Exception as exc:
-                self.failed.emit('Screen map: '+str(exc),generation)
+                self.failed.emit('Screen map: '+(str(exc) or type(exc).__name__),generation,False)
             finally:
                 if provider is not None:provider.close()
                 if self.scene_provider is provider:self.scene_provider=None
@@ -562,11 +563,18 @@ class Controller(QObject):
             self.voice_status='Listening…';self.voice_state='go'
         elif kind=='final':
             self.voice_state='go'
-            if event.get('utteranceId') in self.revoked_utterances:
-                self.revoked_utterances.discard(event.get('utteranceId'))
-                self.voice_status='The gaze source changed. Repeat your command.';return
+            utterance = event.get('utteranceId')
+            if utterance in self.revoked_utterances:
+                self.revoked_utterances.discard(utterance)
+                intent = quick_intent(event['text'])
+                if intent and intent.action == 'pause':
+                    self.pause()
+                else:
+                    self.voice_status='The gaze source changed. Repeat your command.'
+                    self.changed.emit()
+                return
             self.voice_status=f'After speech {event.get("afterSpeechMs",event.get("asrMs",0))} ms · recognition {event.get("asrMs",0)} ms'
-            focus,gaze=self.speech_focus.pop(event.get('utteranceId'),(Focus(),None))
+            focus,gaze=self.speech_focus.pop(utterance,(Focus(),None))
             self.command(event['text'],focus,gaze)
         elif kind=='ready':
             self.voice_status='Listening';self.voice_state='go'
@@ -725,7 +733,7 @@ class Controller(QObject):
                     if capture:image=capture[0]
                 decision=self.model_factory(self.settings).interpret(text,scene,focus,image,self.history,learned)
                 self.received_decision.emit(decision,scene,generation,started,source_epoch)
-            except Exception as exc:self.failed.emit(str(exc),generation)
+            except Exception as exc:self.failed.emit(str(exc) or type(exc).__name__,generation,True)
         threading.Thread(target=infer,daemon=True,name='context-command').start()
         self.changed.emit()
 

@@ -206,6 +206,19 @@ class SetupTests(unittest.TestCase):
         self.assertIn('starter-v1', store.receipt_superseded.read_text(encoding='utf-8'))
         self.assertTrue(store.status(BOUNDS)['available'])
 
+    def test_adopting_on_another_screen_preserves_the_previous_profile(self):
+        store = ProfileStore(self.folder)
+        other = Rect(0, 0, 1600, 900)
+        first = store.adopt(starter_profile(), accepted_report(), BOUNDS)
+        self.assertFalse(store.status(other)['available'])
+
+        second = store.adopt(starter_profile(other), accepted_report(), other)
+
+        self.assertEqual(store.load(other)[1]['profile_key'], second)
+        _, previous = store.load(BOUNDS)
+        self.assertEqual(previous['path'], store.profile_backup)
+        self.assertEqual(previous['profile_key'], first)
+
     def test_activation_failure_rolls_back_profile(self):
         store = ProfileStore(self.folder)
         key = store.adopt(starter_profile(), accepted_report(), BOUNDS)

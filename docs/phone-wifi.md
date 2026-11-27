@@ -47,7 +47,8 @@ The phone keeps only the latest frame in memory and reports its age with each
 reply. The PC allows 400 ms for a complete response. It uses a frame only if
 the reported age is at most 150 ms and that age plus the full request round
 trip is under 200 ms. A repeated frame keeps its original timestamp. USB and
-Wi-Fi are selected explicitly and use separate listeners.
+Wi-Fi are selected explicitly and use separate listeners. If no new frame arrives
+for five seconds, Mira closes the connection so you can reconnect.
 
 Hover over the iPhone status in **Overview** to see the round trip and the
 frame age. Gaze-to-highlight latency also includes capture, gaze processing,

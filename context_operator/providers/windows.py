@@ -126,7 +126,7 @@ class WindowsOutput:
         if not self.is_active():raise RuntimeError('Control stopped')
         if self.win.shift_down():raise RuntimeError('Release Shift and repeat the command. This target uses standard Windows input.')
         self.win.send(events)
-    def semantic(self,intent,target):
+    def semantic(self,intent,target,validate=None):
         if not target or target.source!='uia':return False
         if not (intent.action=='click' and target.role in ('Button','Hyperlink','TabItem','ListItem','RadioButton') or intent.action=='type_text' and target.role=='Edit'):return False
         import uiautomation as auto
@@ -145,6 +145,7 @@ class WindowsOutput:
             pattern=control.GetPattern(pattern_id)
             if pattern is None:return False  # Unsupported pattern, before any dispatch.
             def dispatchable():
+                if validate is not None:validate()
                 if self.win.at(*target.rect.center)!=target.window:raise RuntimeError('Another window covers the element')
                 if not self.is_active():raise RuntimeError('Control stopped')
             dispatchable()
@@ -191,20 +192,33 @@ class WindowsOutput:
             raise RuntimeError('Look at an element or say its name first')
         if action == 'type_text' and (not intent.text or len(intent.text) > 10000):
             raise RuntimeError('The text is empty or too long')
-        now=time.monotonic()
-        if not 0<=now-scene.captured<SCENE_TTL:raise RuntimeError('The screen changed. Wait for the target to update.')
         hwnd=target.window if target else scene.window
-        if not hwnd or not self.win.u.IsWindow(hwnd):raise RuntimeError('Choose a window')
         window=scene.window_map(hwnd)
-        if scene.windows:
-            if window is None or not 0<=now-window.captured<MAP_TTL:raise RuntimeError('Updating the window map')
-            if self.win.pid(hwnd)!=window.pid or self.win.rect(hwnd)!=window.rect:raise RuntimeError('The window moved or changed')
-        if target and scene.current_target(target,now) is None:raise RuntimeError('The target is out of date')
-        if target and self.win.pid(hwnd)!=target.pid:raise RuntimeError('The app restarted')
-        if hwnd==scene.window and scene.window_rect and self.win.rect(hwnd)!=scene.window_rect:
-            raise RuntimeError('The window moved. Look at the target again.')
+
+        # UI Automation lookups and window activation can outlast the scene.
+        def validate():
+            now=time.monotonic()
+            if not 0<=now-scene.captured<SCENE_TTL:raise RuntimeError('The screen changed. Wait for the target to update.')
+            if not hwnd or not self.win.u.IsWindow(hwnd):raise RuntimeError('Choose a window')
+            if scene.windows:
+                if window is None or not 0<=now-window.captured<MAP_TTL:raise RuntimeError('Updating the window map')
+                if self.win.pid(hwnd)!=window.pid or self.win.rect(hwnd)!=window.rect:raise RuntimeError('The window moved or changed')
+            if target and scene.current_target(target,now) is None:raise RuntimeError('The target is out of date')
+            if target and self.win.pid(hwnd)!=target.pid:raise RuntimeError('The app restarted')
+            if hwnd==scene.window and scene.window_rect and self.win.rect(hwnd)!=scene.window_rect:
+                raise RuntimeError('The window moved. Look at the target again.')
+
+        def send_native(events,point=None):
+            validate()
+            if point is not None:
+                if self.win.at(*point)!=hwnd:raise RuntimeError('Another window covers the element')
+            elif self.win.foreground()!=hwnd:
+                raise RuntimeError('The window lost focus before Mira could send input')
+            self._send(events)
+
+        validate()
         # Never fall back or repeat a semantic action that was already sent.
-        if self.semantic(intent,target):
+        if self.semantic(intent,target,validate):
             return {'target':target.label,'route':'uia'}
         if not self.is_active():raise RuntimeError('Control stopped')
         if self.win.shift_down():raise RuntimeError('Release Shift and repeat the command. This target uses standard Windows input.')
@@ -216,13 +230,13 @@ class WindowsOutput:
             self.validate_control(target)
             if action=='scroll':
                 sign=1 if intent.direction=='up' else -1
-                self._send([self.win.move_event(x,y),self.win.mouse(0x800,sign*120*min(10,max(1,intent.amount)))])
-            elif action=='move':self._send([self.win.move_event(x,y)])
+                send_native([self.win.move_event(x,y),self.win.mouse(0x800,sign*120*min(10,max(1,intent.amount)))],(x,y))
+            elif action=='move':send_native([self.win.move_event(x,y)],(x,y))
             elif action in ('click', 'double_click', 'right_click'):
                 flags=(8,16) if action=='right_click' else (2,4)
                 events=[self.win.move_event(x,y),self.win.mouse(flags[0]),self.win.mouse(flags[1])]
                 if action=='double_click':events.extend([self.win.mouse(flags[0]),self.win.mouse(flags[1])])
-                self._send(events)
+                send_native(events,(x,y))
             else:
                 raise RuntimeError(f'Action is unavailable ({action})')
         elif action=='type_text':
@@ -233,7 +247,7 @@ class WindowsOutput:
                 if self.win.at(x,y)!=hwnd:raise RuntimeError('The input field is covered')
                 self.validate_visual(target)
                 self.validate_control(target)
-                self._send([self.win.move_event(x,y),self.win.mouse(2),self.win.mouse(4)])
+                send_native([self.win.move_event(x,y),self.win.mouse(2),self.win.mouse(4)],(x,y))
                 time.sleep(.04)
                 if self.win.foreground()!=hwnd:raise RuntimeError('The field lost focus before Mira could type')
                 self.validate_control(target,focused=True)
@@ -241,7 +255,7 @@ class WindowsOutput:
             for i in range(0,len(data),2):
                 char=int.from_bytes(data[i:i+2],'little')
                 events.extend((self.win.key(scan=char,flags=4),self.win.key(scan=char,flags=6)))
-            self._send(events)
+            send_native(events)
         elif action=='press_keys':
             named={'Ctrl':17,'Alt':18,'Shift':16,'Win':91,'Enter':13,'Tab':9,'Escape':27,'Backspace':8,'Delete':46,'Space':32,'Left':37,'Up':38,'Right':39,'Down':40,'Home':36,'End':35,'Pageup':33,'Pagedown':34}
             keys=[]
@@ -256,7 +270,7 @@ class WindowsOutput:
                 keys.append(vk)
             if not keys or len(keys)>5:raise RuntimeError('Invalid keyboard shortcut')
             extended=lambda k:1 if k in (33,34,35,36,37,38,39,40,45,46,91) else 0
-            self._send([self.win.key(vk=k,flags=extended(k)) for k in keys]+[self.win.key(vk=k,flags=2|extended(k)) for k in reversed(keys)])
+            send_native([self.win.key(vk=k,flags=extended(k)) for k in keys]+[self.win.key(vk=k,flags=2|extended(k)) for k in reversed(keys)])
         else:
             raise RuntimeError(f'Action is unavailable ({action})')
         if action=='type_text':target=typed_into

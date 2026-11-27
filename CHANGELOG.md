@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Close the iPhone connection after five seconds without a new TrueDepth frame
+  so it can be retried if tracking freezes.
+- Preserve the previous gaze setup when saving a calibration for another screen.
+- Honor a spoken stop command even if the gaze source changes during speech.
+- Keep a command in progress when the screen reader reports an error.
+- Check that the target and window map are still current just before sending
+  an action to Windows.
+
 ## 1.4.0
 
 The iPhone companion is at 0.4.3. Gaze setups made with 1.3.1 need to be run

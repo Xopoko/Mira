@@ -155,7 +155,7 @@ class ARKitWorker(threading.Thread):
         buffer = b''
         try:
             sock = self.connection.open(stop_event=self.stop_event)
-            started = time.monotonic()  # Finding the phone on Wi-Fi is not time spent waiting for frames.
+            last_frame_at = time.monotonic()
             sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             sock.settimeout(.4)
             while not self.stop_event.is_set():
@@ -182,10 +182,11 @@ class ARKitWorker(threading.Thread):
                 round_trip = time.perf_counter()-sent
                 observation = decoder.decode(json.loads(line))
                 if observation is None:
-                    if not self.frames and now-started > 5:
-                        raise TimeoutError('iPhone isn’t sending TrueDepth data')
+                    if now - last_frame_at >= 5:
+                        raise ConnectionError('No new TrueDepth data. Check the connection.')
                     self.stop_event.wait(.005)
                     continue
+                last_frame_at = now
                 age = observation.age_ms/1000 + round_trip  # Full RTT, using Windows' precise clock.
                 fps = (1/(observation.timestamp-previous) if previous is not None else 0)
                 previous = observation.timestamp

@@ -93,6 +93,43 @@ class LifecycleTests(unittest.TestCase):
         self.c.model_factory.assert_not_called();self.c.output.execute.assert_called_once()
         self.assertIsNone(self.c.ranker)
 
+    def test_screen_map_failure_keeps_active_command_busy(self):
+        c = self.c
+        c.running = False
+        c.settings.update(fast_voice=False, ranker=False)
+        fail_scan = threading.Event()
+        finish_command = threading.Event()
+        command_started = threading.Event()
+
+        def observe():
+            fail_scan.wait(3)
+            raise OSError('scan failed')
+
+        def interpret(*args):
+            command_started.set()
+            finish_command.wait(3)
+            return Intent('clarify')
+
+        c.screen_factory = Mock(return_value=Mock(observe=observe))
+        interpreter = Mock(side_effect=interpret)
+        c.model_factory = Mock(return_value=Mock(interpret=interpreter))
+        c.start()
+        try:
+            c.command('Find the right element')
+            self.assertTrue(command_started.wait(1))
+            fail_scan.set()
+            deadline = time.monotonic() + 2
+            while c.status != 'Screen map: scan failed' and time.monotonic() < deadline:
+                drain()
+            self.assertEqual(c.status, 'Screen map: scan failed')
+            self.assertTrue(c.busy)
+            c.command('Find another element')
+            interpreter.assert_called_once()
+        finally:
+            fail_scan.set()
+            finish_command.set()
+            drain()
+
     def test_complex_command_uses_scores_only_after_background_preparation(self):
         self.c.settings.update(fast_voice=False, ranker=True)
         release = threading.Event()
@@ -219,6 +256,23 @@ class LifecycleTests(unittest.TestCase):
         c.command.assert_not_called()
         c.output.execute.assert_not_called()
         self.assertFalse(c.running)
+    def test_spoken_stop_still_pauses_after_gaze_source_changes(self):
+        c = self.c
+        c.phone = Mock()
+        c.microphone = True
+        c.voice_generation = 3
+        now = time.monotonic()
+        c.gaze = c.attention = Gaze(35, 20, now)
+        c._select_gaze_source(now)
+        c._speech({'type': 'speech_start', 'utteranceId': 1}, 3)
+
+        c.toggle_phone()
+        self.assertTrue(c.running)
+        c._speech({'type': 'final', 'utteranceId': 1, 'text': 'Stop.'}, 3)
+
+        self.assertFalse(c.running)
+        self.assertFalse(c.microphone)
+        c.output.execute.assert_not_called()
     def test_speech_without_onset_target_never_uses_later_focus(self):
         self.c.voice_generation=3;self.c.microphone=True
         self.c._speech({'type':'speech_start','utteranceId':1},3)

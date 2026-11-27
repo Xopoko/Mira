@@ -14,6 +14,10 @@ from .session import STARTER_PROTOCOL, SUPERSEDED_PROTOCOLS, StarterSession, _bo
 from .model import StarterProfile
 
 
+_INVALID_PAIR = (OSError, ValueError, KeyError, TypeError, AttributeError,
+                 EOFError, zipfile.BadZipFile, OverflowError)
+
+
 def _sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -42,12 +46,14 @@ class ProfileStore:
         self.receipt_superseded = self.folder/'personal-profile.superseded.json'
 
     @staticmethod
-    def _verified(profile_path, receipt_path, display):
+    def _verified(profile_path, receipt_path, display=None):
         receipt = json.loads(receipt_path.read_text(encoding='utf-8'))
         protocol = receipt.get('protocol')
         report = receipt.get('report')
+        saved_display = receipt.get('display')
+        expected_display = _bounds(saved_display).tolist() if display is None else display
         if (receipt.get('version') != 1 or not _accepted_report(protocol, report) or
-                receipt.get('display') != display or
+                saved_display != expected_display or
                 not isinstance(receipt.get('sha256'), str) or
                 len(receipt['sha256']) != 64 or
                 _sha(profile_path) != receipt['sha256']):
@@ -60,7 +66,7 @@ class ProfileStore:
             raise ValueError('Personal validation metric is invalid')
         with np.load(profile_path, allow_pickle=False) as saved:
             metadata = json.loads(str(saved['metadata']))
-        if metadata.get('display') != display or metadata.get('protocol') != protocol:
+        if metadata.get('display') != expected_display or metadata.get('protocol') != protocol:
             raise ValueError('Personal profile belongs to another display')
         profile = StarterProfile.load(profile_path, metadata)
         if (receipt.get('engine') != metadata.get('engine') or
@@ -78,8 +84,7 @@ class ProfileStore:
                                  'profile_key': receipt['sha256'],
                                  'quality': receipt['report']['quality'],
                                  'report': receipt['report']}
-            except (OSError, ValueError, KeyError, TypeError, AttributeError,
-                    EOFError, zipfile.BadZipFile, UnicodeError):
+            except _INVALID_PAIR:
                 continue
         reason = ('Gaze setup is more accurate now. Run it again.' if self._superseded() else
                   'Your gaze profile is damaged or uses a different screen' if
@@ -124,7 +129,12 @@ class ProfileStore:
         old_receipt = self.receipt_path.read_bytes() if self.receipt_path.exists() else None
         old_backup_profile = self.profile_backup.read_bytes() if self.profile_backup.exists() else None
         old_backup_receipt = self.receipt_backup.read_bytes() if self.receipt_backup.exists() else None
-        incumbent = self.status(bounds)
+        # The previous setup may be for another screen and still be reusable.
+        try:
+            self._verified(self.profile_path, self.receipt_path)
+            incumbent_valid = True
+        except _INVALID_PAIR:
+            incumbent_valid = False
         try:
             profile.save(staged)
             # Verify the exact bytes that will become active, without pickle.
@@ -137,7 +147,7 @@ class ProfileStore:
                        'collection_sha256': _sha(Path(collection_path)) if collection_path else None,
                        'report': report}
             receipt_stage.write_text(json.dumps(receipt, ensure_ascii=False, indent=2), encoding='utf-8')
-            if incumbent['available'] and incumbent['path'] == self.profile_path:
+            if incumbent_valid:
                 self._atomic_bytes(self.profile_backup, old_profile)
                 self._atomic_bytes(self.receipt_backup, old_receipt)
             elif old_profile is not None and self._superseded():
